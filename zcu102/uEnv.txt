@@ -1,0 +1,1 @@
+bootargs=init=/init video=DP-1:1920x1080 root=/dev/mmcblk0p2 rw rootfstype=ext4 rootwait androidboot.selinux=disabled androidboot.hardware=zcu102 console=ttyPS0,115200 firmware_class.path=/system/etc/firmware

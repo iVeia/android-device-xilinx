@@ -1,0 +1,31 @@
+on early-init
+    mount debugfs debugfs /sys/kernel/debug
+
+on init
+    # See storage config details at http://source.android.com/tech/storage/
+    # Support legacy paths
+    symlink /sdcard /mnt/sdcard
+    symlink /sdcard /storage/sdcard0
+
+on fs
+    mount_all /fstab.zcu102
+
+on post-fs
+    # fake some battery state
+    setprop status.battery.state Slow
+    setprop status.battery.level 5
+    setprop status.battery.level_raw  50
+    setprop status.battery.level_scale 9
+
+    # Set supported opengles version - OpenGLES 2
+    setprop ro.opengles.version 131072
+
+service dhcpcd_eth0 /system/bin/dhcpcd -ABKL
+    class main
+    disabled
+    oneshot
+
+service iprenew_eth0 /system/bin/dhcpcd -n
+    class main
+    disabled
+    oneshot
