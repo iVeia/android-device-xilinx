@@ -33,6 +33,21 @@ PRODUCT_BRAND := Android
 PRODUCT_MODEL := AOSP on ZynqMP ZCU102
 PRODUCT_MANUFACTURER := Xilinx
 
+# Specify variables for kernel build
+KERNEL_SRC_DIR ?= linux-xlnx
+KERNEL_CFG_NAME ?= xilinx_zynqmp_android_defconfig
+KERNEL_DTS_NAMES ?= \
+	zynqmp-zcu102.dts \
+	zynqmp-zcu102-revB.dts
+
+# Check for availability of kernel source
+ifneq ($(wildcard $(KERNEL_SRC_DIR)/Makefile),)
+	# Give precedence to TARGET_PREBUILT_KERNEL
+	ifeq ($(TARGET_PREBUILT_KERNEL),)
+		TARGET_KERNEL_BUILT_FROM_SOURCE := true
+	endif
+endif
+
 # Include gralloc for Mali GPU
 PRODUCT_PACKAGES += \
 	gralloc.zynqmp
