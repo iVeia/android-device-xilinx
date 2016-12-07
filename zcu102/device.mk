@@ -46,3 +46,7 @@ PRODUCT_PACKAGES += libGLES_android
 # Copy bootloader envs
 PRODUCT_COPY_FILES += \
    device/xilinx/zcu102/uEnv.txt:uEnv.txt
+
+# Copy prebuilt BOOT.BIN if it exists
+PRODUCT_COPY_FILES += $(call add-to-product-copy-files-if-exists,\
+	$(LOCAL_PATH)/BOOT.BIN:BOOT.BIN)
