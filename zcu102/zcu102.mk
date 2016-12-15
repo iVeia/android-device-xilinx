@@ -51,3 +51,6 @@ endif
 # Include gralloc for Mali GPU
 PRODUCT_PACKAGES += \
 	gralloc.zynqmp
+
+PRODUCT_COPY_FILES += \
+   device/xilinx/zcu102/bitstream.bit:bitstream.bit
