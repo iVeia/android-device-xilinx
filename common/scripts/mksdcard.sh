@@ -1,12 +1,10 @@
 #!/bin/bash
 
 if [ $# -lt 1 ]; then
-	echo "Usage: $0 /dev/diskname [product=zcu102] [dtb=zynqmp-\$product.dtb]"
+	echo "Usage: $0 /dev/diskname [product=zcu102]"
 	echo " "
 	echo "product   - Android build product name. Default is zcu102"
 	echo "            Used to find folder with build results"	
-	echo "dtb       - DTB file to use as system.dtb. Default is zynqmp-\$product.dtb"
-	echo "            DTB file should be located in out/target/product/\$product"
 	exit -1 ;
 fi
 
@@ -16,21 +14,10 @@ else
    product=zcu102;
 fi
 
-if [ $# -ge 3 ]; then
-   dtb=$3;
-else
-   dtb=zynqmp-$product.dtb;
-fi
-
 echo "========= build SD card for product $product";
 
 if ! [ -d out/target/product/$product/root ]; then
    echo "!!! Error: Missing out/target/product/$product";
-   exit 1;
-fi
-
-if ! [ -e out/target/product/$product/$dtb ]; then
-   echo "!!! Error: Missing DTB file - $dtb";
    exit 1;
 fi
 
@@ -140,7 +127,7 @@ if [ -e ${diskname}${prefix}1 ]; then
 	mount -t vfat ${diskname}${prefix}1 /tmp/$$/boot_part
 	cp -rfv out/target/product/$product/BOOT* /tmp/$$/boot_part/
 	cp -rfv out/target/product/$product/kernel /tmp/$$/boot_part/Image
-	cp -rfv out/target/product/$product/$dtb /tmp/$$/boot_part/system.dtb
+	cp -rfv out/target/product/$product/*.dtb /tmp/$$/boot_part/
 	cp -rfv out/target/product/$product/uEnv.txt /tmp/$$/boot_part/uEnv.txt
 	sync
 	umount /tmp/$$/boot_part
