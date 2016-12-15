@@ -128,6 +128,7 @@ if [ -e ${diskname}${prefix}1 ]; then
 	cp -rfv out/target/product/$product/BOOT* /tmp/$$/boot_part/
 	cp -rfv out/target/product/$product/kernel /tmp/$$/boot_part/Image
 	cp -rfv out/target/product/$product/*.dtb /tmp/$$/boot_part/
+	cp -rfv out/target/product/$product/*.bit /tmp/$$/boot_part/
 	cp -rfv out/target/product/$product/uEnv.txt /tmp/$$/boot_part/uEnv.txt
 	sync
 	umount /tmp/$$/boot_part
