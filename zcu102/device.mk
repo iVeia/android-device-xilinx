@@ -26,6 +26,7 @@ OVERRIDE_RUNTIMES := runtime_libart_default
 PRODUCT_COPY_FILES += \
     $(LOCAL_PATH)/fstab.zcu102:root/fstab.zcu102 \
     $(LOCAL_PATH)/init.zcu102.rc:root/init.zcu102.rc \
+    $(LOCAL_PATH)/init.zcu102.usb.rc:root/init.zcu102.usb.rc \
     $(LOCAL_PATH)/ueventd.zcu102.rc:root/ueventd.zcu102.rc
 
 # Copy supported hardware features config file(s)
