@@ -109,16 +109,16 @@ echo "========= formating BOOT partition"
 mkfs.vfat -F 32 -n BOOT ${diskname}${prefix}1
 
 echo "========= formating ROOT partition"
-mkfs.ext4 -L ROOT ${diskname}${prefix}2
+mkfs.ext4 -F -L ROOT ${diskname}${prefix}2
 
 echo "========= formating SYSTEM partition"
-mkfs.ext4 -L SYSTEM ${diskname}${prefix}5
+mkfs.ext4 -F -L SYSTEM ${diskname}${prefix}5
 
 echo "========= formating CACHE partition"
-mkfs.ext4 -L CACHE ${diskname}${prefix}6
+mkfs.ext4 -F -L CACHE ${diskname}${prefix}6
 
 echo "========= formating DATA partition"
-mkfs.ext4 -L DATA ${diskname}${prefix}4
+mkfs.ext4 -F -L DATA ${diskname}${prefix}4
 
 
 echo "========= populating BOOT partition"
