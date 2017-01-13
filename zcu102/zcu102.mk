@@ -16,12 +16,12 @@
 # limitations under the License.
 #
 
-# Inherit 64-bit device configuration
-$(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit.mk)
+# Inherit device specific configurations
+$(call inherit-product, device/xilinx/zcu102/device-common.mk)
+$(call inherit-product, device/xilinx/zcu102/zcu102_dp/device-zcu102.mk)
 
-# Inherit the full_base and device configurations
+# Inherit full base product
 $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base.mk)
-$(call inherit-product, device/xilinx/zcu102/device.mk)
 
 # Include vendor binaries
 $(call inherit-product-if-exists, vendor/xilinx/zcu102/device-vendor.mk)
@@ -52,5 +52,3 @@ endif
 PRODUCT_PACKAGES += \
 	gralloc.zynqmp
 
-PRODUCT_COPY_FILES += \
-   device/xilinx/zcu102/bitstream.bit:bitstream.bit
