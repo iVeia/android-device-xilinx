@@ -39,7 +39,26 @@ PRODUCT_COPY_FILES += \
 	$(LOCAL_PATH)/init_touch.sh:/system/bin/init_touch.sh
 
 KERNEL_MODULES += \
-	drivers/input/touchscreen/atmel_mxt_ts.ko
+	drivers/input/touchscreen/atmel_mxt_ts.ko \
+	drivers/net/wireless/ti/wl12xx/wl12xx.ko
+
+PRODUCT_COPY_FILES += \
+	$(LOCAL_PATH)/wpa_supplicant.conf:system/etc/wifi/wpa_supplicant.conf \
+	$(LOCAL_PATH)/wl1271-nvs.bin:/system/etc/firmware/ti-connectivity/wl1271-nvs.bin \
+	$(LOCAL_PATH)/wl127x-fw-5-sr.bin:/system/etc/firmware/ti-connectivity/wl127x-fw-5-sr.bin \
+	$(LOCAL_PATH)/wl127x-fw-5-mr.bin:/system/etc/firmware/ti-connectivity/wl127x-fw-5-mr.bin \
+	$(LOCAL_PATH)/wl127x-fw-5-plt.bin:/system/etc/firmware/ti-connectivity/wl127x-fw-5-plt.bin
+
+PRODUCT_PACKAGES += \
+	wpa_supplicant \
+	hostapd \
+	libwpa_client \
+	wificond \
+	wifilogd
+
+PRODUCT_PROPERTY_OVERRIDES += \
+	wifi.interface=wlan0 \
+	wifi.supplicant_scan_interval=15
 
 # Copy prebuilt BOOT.BIN if it exists
 PRODUCT_COPY_FILES += $(call add-to-product-copy-files-if-exists,\

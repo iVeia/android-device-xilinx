@@ -33,6 +33,8 @@ PRODUCT_BRAND := Android
 PRODUCT_MODEL := AOSP on ZynqMP ZCU102 with iVeia Ozzy
 PRODUCT_MANUFACTURER := Xilinx
 
+BOARD_WLAN_VENDOR := TI
+
 # Specify variables for kernel build
 KERNEL_SRC_DIR ?= linux-xlnx
 KERNEL_CFG_NAME ?= xilinx_zynqmp_android_defconfig
