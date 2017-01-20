@@ -24,7 +24,7 @@ $(call inherit-product, device/xilinx/zcu102/zcu102_dp/device-zcu102.mk)
 $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base.mk)
 
 # Include vendor binaries
-$(call inherit-product-if-exists, vendor/xilinx/zcu102/device-vendor.mk)
+$(call inherit-product-if-exists, vendor/xilinx/zynqmp/device-vendor.mk)
 
 # Specify product details
 PRODUCT_NAME := zcu102
