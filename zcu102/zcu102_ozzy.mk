@@ -18,7 +18,7 @@
 
 # Inherit device specific configurations
 $(call inherit-product, device/xilinx/zcu102/device-common.mk)
-$(call inherit-product, device/xilinx/zcu102/ozzy/device-ozzy.mk)
+$(call inherit-product, device/xilinx/zcu102/zcu102_ozzy/device-ozzy.mk)
 
 # Inherit full base product
 $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base.mk)
@@ -28,7 +28,7 @@ $(call inherit-product-if-exists, vendor/xilinx/zynqmp/device-vendor.mk)
 
 # Specify product details
 PRODUCT_NAME := zcu102_ozzy
-PRODUCT_DEVICE := zcu102
+PRODUCT_DEVICE := zcu102_ozzy
 PRODUCT_BRAND := Android
 PRODUCT_MODEL := AOSP on ZynqMP ZCU102 with iVeia Ozzy
 PRODUCT_MANUFACTURER := Xilinx
