@@ -49,6 +49,9 @@ PRODUCT_COPY_FILES += \
 	$(LOCAL_PATH)/wl127x-fw-5-mr.bin:/system/etc/firmware/ti-connectivity/wl127x-fw-5-mr.bin \
 	$(LOCAL_PATH)/wl127x-fw-5-plt.bin:/system/etc/firmware/ti-connectivity/wl127x-fw-5-plt.bin
 
+PRODUCT_COPY_FILES += \
+	$(LOCAL_PATH)/ozzyeeprom.bin:/system/etc/firmware/ozzyeeprom.bin
+
 PRODUCT_PACKAGES += \
 	wpa_supplicant \
 	hostapd \
