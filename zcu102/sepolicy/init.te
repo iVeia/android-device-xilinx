@@ -1,0 +1,11 @@
+# init.usb.rc writes to /config/* to set up USB
+allow init configfs:dir create_dir_perms;
+allow init configfs:file write;
+allow init configfs:lnk_file { create unlink };
+# for symlink /sdcard /mnt/sdcard
+allow init tmpfs:lnk_file create;
+
+# allow su for userdebug and eng builds
+userdebug_or_eng(`
+	allow init su:process { transition siginh rlimitinh };
+')
