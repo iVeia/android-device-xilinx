@@ -1,18 +1,22 @@
 import init.${ro.hardware}.usb.rc
 
-on early-init
-    mount debugfs debugfs /sys/kernel/debug
-
 on init
-    # See storage config details at http://source.android.com/tech/storage/
-    # Support legacy paths
-    symlink /sdcard /mnt/sdcard
-    symlink /sdcard /storage/sdcard0
+    # mount debugfs
+    mount debugfs /sys/kernel/debug /sys/kernel/debug
 
 on fs
     mount_all /fstab.zcu102
+    setprop ro.crypto.fuse_sdcard false
+
+on post-fs-data
+    mkdir /data/media 0770 media_rw media_rw
 
 on post-fs
+    # For legacy support
+    # See storage config details at http://source.android.com/tech/storage/
+    # since /storage is mounted on post-fs in init.rc
+    symlink /sdcard /storage/sdcard0
+
     # fake some battery state
     setprop status.battery.state Slow
     setprop status.battery.level 5
