@@ -49,7 +49,8 @@ BOARD_SYSTEMIMAGE_PARTITION_SIZE := 1073741824
 BOARD_FLASH_BLOCK_SIZE := 131072
 TARGET_USERIMAGES_SPARSE_EXT_DISABLED := true
 
-BOARD_SEPOLICY_DIRS := device/xilinx/zcu102/sepolicy
+BOARD_SEPOLICY_DIRS := device/xilinx/common/sepolicy
+BOARD_SEPOLICY_DIRS += device/xilinx/zcu102/sepolicy
 
 ifeq ($(HOST_OS),linux)
     ifeq ($(WITH_DEXPREOPT),)

@@ -1,0 +1,2 @@
+/dev/mali              u:object_r:gpu_device:s0
+/dev/dri/card0         u:object_r:gpu_device:s0
