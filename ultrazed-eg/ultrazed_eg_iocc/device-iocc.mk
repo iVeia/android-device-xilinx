@@ -28,3 +28,7 @@ PRODUCT_COPY_FILES += \
 # Copy prebuilt BOOT.BIN if it exists
 PRODUCT_COPY_FILES += $(call add-to-product-copy-files-if-exists,\
 	$(LOCAL_PATH)/BOOT.BIN:BOOT.BIN)
+
+# Copy FPGA firmware if it exists
+PRODUCT_COPY_FILES += $(call add-to-product-copy-files-if-exists,\
+	$(LOCAL_PATH)/bitstream.bit:bitstream.bit)
