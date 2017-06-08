@@ -1,0 +1,4 @@
+# Triggers a sys_module denial, 
+# but netd is not loading anything
+allow netd kernel:system module_request;
+allow netd self:capability sys_module;
