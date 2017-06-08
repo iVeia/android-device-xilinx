@@ -19,7 +19,7 @@
 ifeq ($(TARGET_KERNEL_BUILT_FROM_SOURCE),true)
 
 ifeq ($(KERNEL_CFG_NAME),)
-$(error cannot build kernel, config not specified)
+$(error cannot build kernel, config is not specified)
 endif
 
 KERNEL_EXTRA_FLAGS := CFLAGS_MODULE="-fno-pic" ANDROID_TOOLCHAIN_FLAGS="-mno-android -Werror"
@@ -96,4 +96,5 @@ menuconfig xconfig gconfig: $(KERNEL_CONFIG)
 .PHONY: menuconfig xconfig gconfig
 .PHONY: build_kernel clean_kernel
 .PHONY: $(KERNEL_IMAGE)
+droidcore: $(KERNEL_IMAGE)
 endif #TARGET_KERNEL_BUILT_FROM_SOURCE

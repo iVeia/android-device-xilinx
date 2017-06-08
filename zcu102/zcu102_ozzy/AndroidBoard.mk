@@ -19,4 +19,4 @@
 # include makefile for Xilinx kernel
 # variables for kernel build should be set in 
 # product makefile
-include device/xilinx/common/kernel/AndroidKernel.mk
+include device/xilinx/common/build/kernel.mk
