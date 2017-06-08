@@ -18,3 +18,8 @@
 # variables for kernel build should be set in 
 # product makefile
 include device/xilinx/common/build/kernel.mk
+
+# include makefile for Xilinx U-Boot
+# variables for U-Boot build should be set in
+# product makefile
+include device/xilinx/common/build/u-boot.mk

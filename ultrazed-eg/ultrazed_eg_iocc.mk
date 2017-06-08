@@ -48,3 +48,7 @@ endif
 # Include gralloc for Mali GPU
 PRODUCT_PACKAGES += \
 	gralloc.zynqmp
+
+UBOOT_SRC_DIR ?= bootable/u-boot-xlnx
+UBOOT_CFG_NAME ?= xilinx_zynqmp_ultrazed_eg_iocc_defconfig
+TARGET_UBOOT_BUILT_FROM_SOURCE := true
