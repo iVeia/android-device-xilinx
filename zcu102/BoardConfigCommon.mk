@@ -44,6 +44,11 @@ BOARD_USES_GENERIC_AUDIO := true
 TARGET_NO_BOOTLOADER := true
 TARGET_NO_RADIOIMAGE := true
 
+# We are not using standard boot.img in
+# the booting process for now. Kernel is
+# built and used in a custom way.
+TARGET_NO_KERNEL := true
+
 TARGET_USERIMAGES_USE_EXT4 := true
 BOARD_SYSTEMIMAGE_PARTITION_SIZE := 1073741824
 BOARD_FLASH_BLOCK_SIZE := 131072

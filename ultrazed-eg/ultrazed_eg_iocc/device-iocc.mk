@@ -23,12 +23,12 @@ PRODUCT_COPY_FILES += \
 
 # Copy bootloader envs
 PRODUCT_COPY_FILES += \
-   $(LOCAL_PATH)/uEnv.txt:uEnv.txt
+   $(LOCAL_PATH)/uEnv.txt:boot/uEnv.txt
 
 # Copy prebuilt BOOT.BIN if it exists
 PRODUCT_COPY_FILES += $(call add-to-product-copy-files-if-exists,\
-	$(LOCAL_PATH)/BOOT.BIN:BOOT.BIN)
+	$(LOCAL_PATH)/BOOT.BIN:boot/BOOT.BIN)
 
 # Copy FPGA firmware if it exists
 PRODUCT_COPY_FILES += $(call add-to-product-copy-files-if-exists,\
-	$(LOCAL_PATH)/bitstream.bit:bitstream.bit)
+	$(LOCAL_PATH)/bitstream.bit:boot/bitstream.bit)

@@ -27,7 +27,7 @@ KERNEL_CROSS_COMP := $(notdir $(TARGET_TOOLS_PREFIX))
 KERNEL_OUT_DIR := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ
 KERNEL_CONFIG := $(KERNEL_OUT_DIR)/.config
 KERNEL_SAVE_DEFCONFIG := $(KERNEL_OUT_DIR)/defconfig
-KERNEL_IMAGE := $(PRODUCT_OUT)/kernel
+KERNEL_IMAGE := $(PRODUCT_OUT)/boot/kernel
 KERNEL_MODULES_OUT := $(PRODUCT_OUT)/system/vendor/modules
 
 ifneq ($(KERNEL_DTS_NAMES),)
@@ -74,7 +74,7 @@ build_dtbs: build_kernel $(ACP) $(KERNEL_CONFIG) $(SOURCE_DTS_FILES) | $(KERNEL_
 	$(KERNEL_BLD_ENV) $(MAKE) -C $(KERNEL_SRC_DIR) $(KERNEL_BLD_FLAGS) $(KERNEL_ENV) dtbs
 	for dtbfile in $(TARGET_DTB_FILES); do \
 		dtbtarget=`basename $$dtbfile` \
-		$(ACP) $$dtbfile $(PRODUCT_OUT)/$$dtbtarget; \
+		$(ACP) $$dtbfile $(PRODUCT_OUT)/boot/$$dtbtarget; \
 	done
 
 $(KERNEL_OUT_DIR)/arch/$(TARGET_ARCH)/boot/Image: build_kernel build_dtbs

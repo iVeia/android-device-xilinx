@@ -125,11 +125,11 @@ echo "========= populating BOOT partition"
 if [ -e ${diskname}${prefix}1 ]; then
 	mkdir -p /tmp/$$/boot_part
 	mount -t vfat ${diskname}${prefix}1 /tmp/$$/boot_part
-	cp -rfv out/target/product/$product/BOOT* /tmp/$$/boot_part/
-	cp -rfv out/target/product/$product/kernel /tmp/$$/boot_part/Image
-	cp -rfv out/target/product/$product/*.dtb /tmp/$$/boot_part/
-	cp -rfv out/target/product/$product/*.bit /tmp/$$/boot_part/
-	cp -rfv out/target/product/$product/uEnv.txt /tmp/$$/boot_part/uEnv.txt
+	cp -rfv out/target/product/$product/boot/BOOT* /tmp/$$/boot_part/
+	cp -rfv out/target/product/$product/boot/kernel /tmp/$$/boot_part/Image
+	cp -rfv out/target/product/$product/boot/*.dtb /tmp/$$/boot_part/
+	cp -rfv out/target/product/$product/boot/*.bit /tmp/$$/boot_part/
+	cp -rfv out/target/product/$product/boot/uEnv.txt /tmp/$$/boot_part/uEnv.txt
 	sync
 	umount /tmp/$$/boot_part
 	rm -rf /tmp/$$/boot_part
