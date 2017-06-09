@@ -16,7 +16,7 @@ fi
 
 echo "========= build SD card for product $product";
 
-if ! [ -d out/target/product/$product/root ]; then
+if ! [ -d out/target/product/$product/boot ]; then
    echo "!!! Error: Missing out/target/product/$product";
    exit 1;
 fi
@@ -130,24 +130,12 @@ if [ -e ${diskname}${prefix}1 ]; then
 	cp -rfv out/target/product/$product/boot/*.dtb /tmp/$$/boot_part/
 	cp -rfv out/target/product/$product/boot/*.bit /tmp/$$/boot_part/
 	cp -rfv out/target/product/$product/boot/uEnv.txt /tmp/$$/boot_part/uEnv.txt
+	cp -rfv out/target/product/$product/boot/uramdisk.img /tmp/$$/boot_part/uramdisk.img
 	sync
 	umount /tmp/$$/boot_part
 	rm -rf /tmp/$$/boot_part
 else
    echo "!!! Error: missing BOOT partition ${diskname}${prefix}1";
-   exit 1
-fi
-
-echo "========= populating ROOT partition"
-if [ -e ${diskname}${prefix}2 ]; then
-	mkdir -p /tmp/$$/root_part
-	mount  -t ext4 ${diskname}${prefix}2 /tmp/$$/root_part
-	cp -rfv out/target/product/$product/root/* /tmp/$$/root_part
-	sync
-	umount /tmp/$$/root_part
-	rm -rf /tmp/$$/root_part
-else
-   echo "!!! Error: missing ROOT partition ${diskname}${prefix}2";
    exit 1
 fi
 
