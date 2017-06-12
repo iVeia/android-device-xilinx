@@ -4,14 +4,29 @@ if [ $# -lt 1 ]; then
 	echo "Usage: $0 /dev/diskname [product=zcu102]"
 	echo " "
 	echo "product   - Android build product name. Default is zcu102"
-	echo "            Used to find folder with build results"	
+	echo "            Used to find folder with build results"
+	echo "silicon   - Silicon revision of the SoC on the board."
+	echo "            es1 or es2. Default is es1"
 	exit -1 ;
 fi
 
 if [ $# -ge 2 ]; then
-   product=$2;
+	product=$2;
 else
-   product=zcu102;
+	product=zcu102;
+fi
+
+if [ $# -ge 3 ]; then
+	silicon=$3;
+else
+	silicon=es1;
+fi
+
+if [[ ! "$silicon" == "es1" ]]; then
+	if [[ ! "$silicon" == "es2" ]]; then
+		echo "!!! Error: silicon revision must be es1 or es2";
+		exit 1;
+	fi
 fi
 
 echo "========= build SD card for product $product";
@@ -45,11 +60,11 @@ diskname=$1
 removables=`removable_disks`
 
 for disk in $removables ; do
-   echo "Found available removable disk: $disk" ;
-   if [ "$diskname" = "$disk" ]; then
-      matched=1 ;
-      break ;
-   fi
+	echo "Found available removable disk: $disk" ;
+	if [ "$diskname" = "$disk" ]; then
+		matched=1 ;
+		break ;
+	fi
 done
 
 if [ -z "$matched" -a -z "$force" ]; then
@@ -57,14 +72,14 @@ if [ -z "$matched" -a -z "$force" ]; then
 		echo "mmcblk not seen as removable but will try it anyway"
 	else
 		echo "Invalid disk $diskname" ;
-	exit -1;
-    fi
+		exit -1;
+	fi
 fi
 
 prefix='';
 
 if [[ "$diskname" =~ "mmcblk" ]]; then
-   prefix=p
+	prefix=p
 fi
 
 echo "reasonable disk $diskname, partitions ${diskname}${prefix}1..." ;
@@ -98,11 +113,11 @@ parted -s --align=optimal ${diskname} mkpart primary 3332MiB 100%
 sync
 
 for n in `seq 1 6` ; do
-   if ! [ -e ${diskname}${prefix}$n ] ; then
-      echo "!!! Error: missing partition ${diskname}${prefix}$n" ;
-      exit 1;
-   fi
-   sync
+	if ! [ -e ${diskname}${prefix}$n ] ; then
+		echo "!!! Error: missing partition ${diskname}${prefix}$n" ;
+		exit 1;
+	fi
+	sync
 done
 
 echo "========= formating BOOT partition"
@@ -141,11 +156,20 @@ fi
 
 echo "========= populating SYSTEM partition"
 if [ -e ${diskname}${prefix}5 ]; then
-   sudo dd if=out/target/product/$product/system.img of=${diskname}${prefix}5
-   sudo e2label ${diskname}${prefix}5 SYSTEM
-   sudo e2fsck -f ${diskname}${prefix}5
-   sudo resize2fs ${diskname}${prefix}5
+	sudo dd if=out/target/product/$product/system.img of=${diskname}${prefix}5
+	sudo e2label ${diskname}${prefix}5 SYSTEM
+	sudo e2fsck -f ${diskname}${prefix}5
+	sudo resize2fs ${diskname}${prefix}5
+	if [[ "$silicon" == "es1" ]]; then
+		mkdir -p /tmp/$$/system_part
+		mount -t ext4 ${diskname}${prefix}5 /tmp/$$/system_part
+		sudo mv /tmp/$$/system_part/lib/egl/libGLES_mali.so_es1 /tmp/$$/system_part/lib/egl/libGLES_mali.so
+		sudo mv /tmp/$$/system_part/lib64/egl/libGLES_mali.so_es1 /tmp/$$/system_part/lib64/egl/libGLES_mali.so
+		sync
+		umount /tmp/$$/system_part
+		rm -rf /tmp/$$/system_part
+	fi
 else
-   echo "!!! Error: missing SYSTEM partition ${diskname}${prefix}5";
-   exit 1
+	echo "!!! Error: missing SYSTEM partition ${diskname}${prefix}5";
+	exit 1
 fi
