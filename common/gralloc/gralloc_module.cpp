@@ -189,7 +189,9 @@ static int gralloc_register_buffer(gralloc_module_t const *module, buffer_handle
 		AERR("registering non-UMP buffer not supported. flags = %d", hnd->flags);
 	}
 
+#if GRALLOC_ARM_DMA_BUF_MODULE
 cleanup:
+#endif
 	pthread_mutex_unlock(&s_map_lock);
 	return retval;
 }
@@ -328,9 +330,6 @@ static int gralloc_unlock(gralloc_module_t const *module, buffer_handle_t handle
 	}
 
 	private_handle_t *hnd = (private_handle_t *)handle;
-	int32_t current_value;
-	int32_t new_value;
-	int retry;
 
 	if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP && hnd->writeOwner)
 	{
@@ -378,8 +377,7 @@ static int gralloc_unlock(gralloc_module_t const *module, buffer_handle_t handle
 
 static struct hw_module_methods_t gralloc_module_methods =
 {
-open:
-	gralloc_device_open
+	.open = gralloc_device_open
 };
 
 private_module_t::private_module_t()
