@@ -111,6 +111,7 @@ echo "========= creating DATA partition"
 parted -s --align=optimal ${diskname} mkpart primary 3332MiB 100%
 
 sync
+sleep 1
 
 for n in `seq 1 6` ; do
 	if ! [ -e ${diskname}${prefix}$n ] ; then
