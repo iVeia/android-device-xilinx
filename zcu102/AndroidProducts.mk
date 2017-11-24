@@ -17,5 +17,4 @@
 #
 
 PRODUCT_MAKEFILES := \
-	$(LOCAL_DIR)/zcu102.mk \
-	$(LOCAL_DIR)/zcu102_ozzy.mk
+	$(LOCAL_DIR)/zcu102.mk

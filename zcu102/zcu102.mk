@@ -37,8 +37,7 @@ PRODUCT_MANUFACTURER := Xilinx
 KERNEL_SRC_DIR ?= linux-xlnx
 KERNEL_CFG_NAME ?= xilinx_zynqmp_android_defconfig
 KERNEL_DTS_NAMES ?= \
-	zynqmp-zcu102.dts \
-	zynqmp-zcu102-revB.dts
+	zynqmp-zcu102-rev1.0.dts
 
 # Check for availability of kernel source
 ifneq ($(wildcard $(KERNEL_SRC_DIR)/Makefile),)
@@ -52,3 +51,6 @@ endif
 PRODUCT_PACKAGES += \
 	gralloc.zynqmp
 
+UBOOT_SRC_DIR ?= bootable/u-boot-xlnx
+UBOOT_CFG_NAME ?= xilinx_zynqmp_zcu102_rev1_0_defconfig
+TARGET_UBOOT_BUILT_FROM_SOURCE := true
