@@ -32,6 +32,14 @@ LOCAL_SRC_FILES := \
 	alloc_device.cpp \
 	framebuffer_device.cpp
 
+# Workaround:
+# ION ABI has changed in kernel since 4.12
+# Android libion is temporary using internal ion_4.12.h header
+# for a new interface.
+# Include libion's folder to have access to the header with the
+# new interface
+LOCAL_C_INCLUDES += system/core/libion
+
 LOCAL_MODULE := gralloc.$(TARGET_BOARD_PLATFORM)
 LOCAL_MODULE_RELATIVE_PATH := hw
 
