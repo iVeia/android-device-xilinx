@@ -39,6 +39,8 @@ static int s_ump_is_open = 0;
 #include <sys/mman.h>
 #endif
 
+#define GRALLOC_ALIGN( value, base ) (((value) + ((base) - 1)) & ~((base) - 1))
+
 static pthread_mutex_t s_map_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static int gralloc_device_open(const hw_module_t *module, const char *name, hw_device_t **device)
@@ -96,7 +98,8 @@ static int gralloc_register_buffer(gralloc_module_t const *module, buffer_handle
 
 	if (hnd->flags & private_handle_t::PRIV_FLAGS_FRAMEBUFFER)
 	{
-		AERR("Can't register buffer 0x%p as it is a framebuffer", handle);
+		AINF("Register buffer 0x%p although it will be treated as a nop", handle);
+		retval = 0;
 	}
 	else if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP)
 	{
@@ -288,6 +291,12 @@ static int gralloc_lock(gralloc_module_t const *module, buffer_handle_t handle, 
 
 	private_handle_t *hnd = (private_handle_t *)handle;
 
+	if (hnd->format == HAL_PIXEL_FORMAT_YCbCr_420_888)
+	{
+		AERR("Buffer with format HAL_PIXEL_FORMAT_YCbCr_*_888 must be locked by lock_ycbcr()");
+		return -EINVAL;
+	}
+
 	pthread_mutex_lock(&s_map_lock);
 
 	if (hnd->lockState & private_handle_t::LOCK_STATE_UNREGISTERED)
@@ -317,6 +326,83 @@ static int gralloc_lock(gralloc_module_t const *module, buffer_handle_t handle, 
 	MALI_IGNORE(w);
 	MALI_IGNORE(h);
 	return 0;
+}
+
+static int gralloc_lock_ycbcr(gralloc_module_t const *module, buffer_handle_t handle, int usage, int l, int t, int w, int h, struct android_ycbcr *ycbcr)
+{
+	int retval = 0;
+	int ystride, cstride;
+
+	if (private_handle_t::validate(handle) < 0)
+	{
+		AERR("Locking invalid buffer 0x%p, returning error", handle);
+		return -EINVAL;
+	}
+
+	private_handle_t *hnd = (private_handle_t *)handle;
+
+	pthread_mutex_lock(&s_map_lock);
+
+	if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_UMP || hnd->flags & private_handle_t::PRIV_FLAGS_USES_ION)
+	{
+		hnd->writeOwner = usage & GRALLOC_USAGE_SW_WRITE_MASK;
+	}
+
+	hnd->lockState |= private_handle_t::LOCK_STATE_WRITE;
+
+	pthread_mutex_unlock(&s_map_lock);
+
+
+	if (usage & (GRALLOC_USAGE_SW_READ_MASK | GRALLOC_USAGE_SW_WRITE_MASK))
+	{
+		switch (hnd->format)
+		{
+			case HAL_PIXEL_FORMAT_YCrCb_420_SP:
+				ystride = cstride = GRALLOC_ALIGN(hnd->width, 16);
+				ycbcr->y  = (void *)hnd->base;
+				ycbcr->cr = (void *)((unsigned char *)hnd->base + ystride * hnd->height);
+				ycbcr->cb = (void *)((unsigned char *)hnd->base + ystride * hnd->height + 1);
+				ycbcr->ystride = ystride;
+				ycbcr->cstride = cstride;
+				ycbcr->chroma_step = 2;
+				break;
+
+			case HAL_PIXEL_FORMAT_YV12:
+				ystride = GRALLOC_ALIGN(hnd->width, 16);
+				cstride = GRALLOC_ALIGN(hnd->width / 2, 16);
+				ycbcr->y  = (void *)hnd->base;
+				ycbcr->cr = (void *)((unsigned char *)hnd->base + ystride * hnd->height);
+				ycbcr->cb = (void *)((unsigned char *)hnd->base + ystride * hnd->height + cstride * hnd->height / 2);
+				ycbcr->ystride = ystride;
+				ycbcr->cstride = cstride;
+				ycbcr->chroma_step = 1;
+				break;
+
+#ifdef SUPPORT_LEGACY_FORMAT
+
+			case HAL_PIXEL_FORMAT_YCbCr_420_SP:
+				ystride = cstride = GRALLOC_ALIGN(hnd->width, 16);
+				ycbcr->y  = (void *)hnd->base;
+				ycbcr->cb = (void *)((unsigned char *)hnd->base + ystride * hnd->height);
+				ycbcr->cr = (void *)((unsigned char *)hnd->base + ystride * hnd->height + 1);
+				ycbcr->ystride = ystride;
+				ycbcr->cstride = cstride;
+				ycbcr->chroma_step = 2;
+				break;
+#endif
+
+			default:
+				AERR("Can not lock buffer, invalid format: 0x%x", hnd->format);
+				retval = -EINVAL;
+		}
+	}
+
+	MALI_IGNORE(module);
+	MALI_IGNORE(l);
+	MALI_IGNORE(t);
+	MALI_IGNORE(w);
+	MALI_IGNORE(h);
+	return retval;
 }
 
 static int gralloc_unlock(gralloc_module_t const *module, buffer_handle_t handle)
@@ -397,6 +483,7 @@ private_module_t::private_module_t()
 	base.registerBuffer = gralloc_register_buffer;
 	base.unregisterBuffer = gralloc_unregister_buffer;
 	base.lock = gralloc_lock;
+	base.lock_ycbcr = gralloc_lock_ycbcr;
 	base.unlock = gralloc_unlock;
 	base.perform = NULL;
 	INIT_ZERO(base.reserved_proc);

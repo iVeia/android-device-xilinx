@@ -153,17 +153,19 @@ static int gralloc_alloc_buffer(alloc_device_t *dev, size_t size, int usage, buf
 		{
 			map_mask = PROT_WRITE;
 		}
+		// ion_hnd is no longer needed once we acquire shared_fd.
+		if (0 != ion_free(m->ion_client, ion_hnd))
+		{
+			AWAR("ion_free( %d ) failed", m->ion_client);
+		}
+
+		ion_hnd = ION_INVALID_HANDLE;
 
 		cpu_ptr = mmap(NULL, size, map_mask, MAP_SHARED, shared_fd, 0);
 
 		if (MAP_FAILED == cpu_ptr)
 		{
 			AERR("ion_map( %d ) failed", m->ion_client);
-
-			if (0 != ion_free(m->ion_client, ion_hnd))
-			{
-				AERR("ion_free( %d ) failed", m->ion_client);
-			}
 
 			close(shared_fd);
 			return -1;
@@ -176,7 +178,6 @@ static int gralloc_alloc_buffer(alloc_device_t *dev, size_t size, int usage, buf
 		if (NULL != hnd)
 		{
 			hnd->share_fd = shared_fd;
-			hnd->ion_hnd = ion_hnd;
 			*pHandle = hnd;
 			return 0;
 		}
@@ -192,13 +193,6 @@ static int gralloc_alloc_buffer(alloc_device_t *dev, size_t size, int usage, buf
 		if (0 != ret)
 		{
 			AERR("munmap failed for base:%p size: %lu", cpu_ptr, (unsigned long)size);
-		}
-
-		ret = ion_free(m->ion_client, ion_hnd);
-
-		if (0 != ret)
-		{
-			AERR("ion_free( %d ) failed", m->ion_client);
 		}
 
 		return -1;
@@ -344,7 +338,7 @@ static int gralloc_alloc_framebuffer_locked(alloc_device_t *dev, size_t size, in
 
 	// The entire framebuffer memory is already mapped, now create a buffer object for parts of this memory
 	private_handle_t *hnd = new private_handle_t(private_handle_t::PRIV_FLAGS_FRAMEBUFFER, usage, size, vaddr,
-	        0, dup(m->framebuffer->fd), (uintptr_t)vaddr - (uintptr_t) m->framebuffer->base);
+	        0, m->framebuffer->fd, (uintptr_t)vaddr - (uintptr_t) m->framebuffer->base);
 #if GRALLOC_ARM_UMP_MODULE
 	hnd->ump_id = m->framebuffer->ump_id;
 
@@ -374,6 +368,14 @@ static int gralloc_alloc_framebuffer_locked(alloc_device_t *dev, size_t size, in
 
 #endif
 	}
+
+	// correct numFds/numInts when there is no dmabuf fd
+	if (hnd->share_fd < 0)
+	{
+		hnd->numFds--;
+		hnd->numInts++;
+	}
+
 #endif
 
 	*pHandle = hnd;
@@ -554,7 +556,6 @@ static int alloc_device_free(alloc_device_t *dev, buffer_handle_t handle)
 		const size_t bufferSize = m->finfo.line_length * m->info.yres;
 		int index = ((uintptr_t)hnd->base - (uintptr_t)m->framebuffer->base) / bufferSize;
 		m->bufferMask &= ~(1 << index);
-		close(hnd->fd);
 
 #if GRALLOC_ARM_UMP_MODULE
 
@@ -595,11 +596,6 @@ static int alloc_device_free(alloc_device_t *dev, buffer_handle_t handle)
 		}
 
 		close(hnd->share_fd);
-
-		if (0 != ion_free(m->ion_client, hnd->ion_hnd))
-		{
-			AERR("Failed to ion_free( ion_client: %d ion_hnd: %p )", m->ion_client, (void *)(uintptr_t)hnd->ion_hnd);
-		}
 
 		memset((void *)hnd, 0, sizeof(*hnd));
 #else
