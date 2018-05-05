@@ -103,7 +103,7 @@ static int gralloc_alloc_buffer(alloc_device_t *dev, size_t size, int usage, buf
 #if GRALLOC_ARM_DMA_BUF_MODULE
 	{
 		private_module_t *m = reinterpret_cast<private_module_t *>(dev->common.module);
-		ion_user_handle_t ion_hnd;
+		ion_user_handle_t ion_hnd = 0;
 		void *cpu_ptr = MAP_FAILED;
 		int shared_fd;
 		int ret;
