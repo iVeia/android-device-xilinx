@@ -44,3 +44,16 @@ PRODUCT_PACKAGES += \
 
 # Include libs for SW graphics
 PRODUCT_PACKAGES += libGLES_android
+
+# Graphics HAL
+PRODUCT_PACKAGES += \
+    android.hardware.graphics.allocator@2.0-impl \
+    android.hardware.graphics.mapper@2.0-impl
+
+PRODUCT_PACKAGES += \
+    android.hardware.audio@2.0-impl \
+	android.hardware.audio.effect@2.0-impl \
+
+# Keymaster HAL
+PRODUCT_PACKAGES += \
+    android.hardware.keymaster@3.0-impl
