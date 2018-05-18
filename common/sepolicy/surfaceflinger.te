@@ -1,0 +1,3 @@
+type debugfs_swsync, debugfs_type, fs_type;
+
+allow surfaceflinger debugfs_swsync:file { open read write ioctl };

@@ -1,0 +1,1 @@
+genfscon debugfs /sync/sw_sync				u:object_r:debugfs_swsync:s0
