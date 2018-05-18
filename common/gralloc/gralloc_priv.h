@@ -187,6 +187,7 @@ struct private_handle_t
 	int     fd; //Shallow copy, DO NOT duplicate
 	int     offset;
 
+	int	byte_stride;
 #if GRALLOC_ARM_DMA_BUF_MODULE
 	ion_user_handle_t ion_hnd;
 #endif
