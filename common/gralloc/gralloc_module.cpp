@@ -51,11 +51,12 @@ static int gralloc_device_open(const hw_module_t *module, const char *name, hw_d
 	{
 		status = alloc_device_open(module, name, device);
 	}
+#ifndef DISABLE_FRAMEBUFFER_HAL
 	else if (!strncmp(name, GRALLOC_HARDWARE_FB0, MALI_GRALLOC_HARDWARE_MAX_STR_LEN))
 	{
 		status = framebuffer_device_open(module, name, device);
 	}
-
+#endif /* DISABLE_FRAMEBUFFER_HAL */
 	return status;
 }
 
