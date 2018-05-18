@@ -15,5 +15,4 @@
 #
 
 PRODUCT_MAKEFILES := \
-	$(LOCAL_DIR)/zcu106.mk \
-	$(LOCAL_DIR)/zcu106_vcu.mk
+	$(LOCAL_DIR)/zcu106.mk

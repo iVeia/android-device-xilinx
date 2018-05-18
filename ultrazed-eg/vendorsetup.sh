@@ -12,5 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-add_lunch_combo ultrazed_eg_iocc-userdebug
-add_lunch_combo ultrazed_eg_iocc-eng
+# add_lunch_combo ultrazed_eg_iocc-userdebug
+# add_lunch_combo ultrazed_eg_iocc-eng

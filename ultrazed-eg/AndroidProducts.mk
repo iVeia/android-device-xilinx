@@ -14,5 +14,5 @@
 # limitations under the License.
 #
 
-PRODUCT_MAKEFILES := \
-	$(LOCAL_DIR)/ultrazed_eg_iocc.mk
+# PRODUCT_MAKEFILES := \
+# 	$(LOCAL_DIR)/ultrazed_eg_iocc.mk
