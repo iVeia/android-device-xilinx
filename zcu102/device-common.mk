@@ -38,11 +38,35 @@ PRODUCT_COPY_FILES +=  \
     frameworks/native/data/etc/android.software.app_widgets.xml:system/etc/permissions/android.software.app_widgets.xml \
     frameworks/native/data/etc/android.software.backup.xml:system/etc/permissions/android.software.backup.xml \
     frameworks/native/data/etc/android.hardware.usb.accessory.xml:system/etc/permissions/android.hardware.usb.accessory.xml \
-    frameworks/native/data/etc/android.hardware.usb.host.xml:system/etc/permissions/android.hardware.usb.host.xml
+    frameworks/native/data/etc/android.hardware.usb.host.xml:system/etc/permissions/android.hardware.usb.host.xml \
+    frameworks/native/data/etc/android.hardware.wifi.xml:system/etc/permissions/android.hardware.wifi.xml \
+    device/xilinx/zcu102/atmel-maxtouch.idc:system/usr/idc/atmel-maxtouch.idc \
+    device/xilinx/zcu102/wpa_supplicant.conf:system/etc/wifi/wpa_supplicant.conf \
+    device/xilinx/zcu102/wpa_supplicant_overlay.conf:system/etc/wifi/wpa_supplicant_overlay.conf 
+    
 
 # Add libion for graphics
 PRODUCT_PACKAGES += \
-	libion
+	libion \
+	libdrm \
+	modetest 
+
+# Add wifi-related packages
+PRODUCT_PACKAGES += \
+    libwpa_client \
+    hostapd \
+    wpa_supplicant \
+    wpa_supplicant.conf
+
+PRODUCT_COPY_FILES +=  \
+    device/xilinx/zcu102/brcm/4343w.hcd:system/lib/firmware/brcm/4343w.hcd \
+    device/xilinx/zcu102/brcm/brcmfmac43430-sdio.bin:system/lib/firmware/brcm/brcmfmac43430-sdio.bin \
+    device/xilinx/zcu102/brcm/brcmfmac43430-sdio.txt:system/lib/firmware/brcm/brcmfmac43430-sdio.txt \
+    device/xilinx/zcu102/brcm/bcm4343w/4343w.hcd:system/lib/firmware/brcm/bcm4343w/4343w.hcd \
+    device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio.bin:system/lib/firmware/brcm/bcm4343w/brcmfmac43430-sdio.bin \
+    device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio.txt:system/lib/firmware/brcm/bcm4343w/brcmfmac43430-sdio.txt \
+    device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt:system/lib/firmware/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt \
+    device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin:system/lib/firmware/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin \
 
 # Include libs for SW graphics
 PRODUCT_PACKAGES += libGLES_android

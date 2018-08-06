@@ -34,10 +34,10 @@ PRODUCT_MODEL := AOSP on ZynqMP ZCU102
 PRODUCT_MANUFACTURER := Xilinx
 
 # Specify variables for kernel build
-KERNEL_SRC_DIR ?= $(ANDROID_BUILD_TOP)/linux-xlnx
-KERNEL_CFG_NAME ?= xilinx_zynqmp_android_defconfig
+KERNEL_SRC_DIR ?= $(ANDROID_BUILD_TOP)/linux-iveia
+KERNEL_CFG_NAME ?= iveia_atlas_ii_z8_defconfig
 KERNEL_DTS_NAMES ?= \
-	zynqmp-zcu102-rev1.0.dts
+	iveia-atlas-ii-z8.dts
 
 # Check for availability of kernel source
 ifneq ($(wildcard $(KERNEL_SRC_DIR)/Makefile),)
