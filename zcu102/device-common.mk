@@ -42,8 +42,7 @@ PRODUCT_COPY_FILES +=  \
 
 # Add libion for graphics
 PRODUCT_PACKAGES += \
-	libion \
-	libdrm
+	libion
 
 # Include libs for SW graphics
 PRODUCT_PACKAGES += libGLES_android
@@ -52,7 +51,6 @@ PRODUCT_PACKAGES += libGLES_android
 PRODUCT_PACKAGES += \
     android.hardware.graphics.allocator@2.0-impl \
     android.hardware.graphics.mapper@2.0-impl \
-    android.hardware.graphics.composer@2.1-impl \
 
 PRODUCT_PACKAGES += \
     android.hardware.audio@2.0-impl \
@@ -62,7 +60,3 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     android.hardware.keymaster@3.0-impl
 
-TARGET_USES_HWC2 := true
-BOARD_USES_DRM_HWCOMPOSER := true
-PRODUCT_PACKAGES += hwcomposer.drm
-SF_START_GRAPHICS_ALLOCATOR_SERVICE := true
