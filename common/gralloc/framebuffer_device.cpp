@@ -386,6 +386,10 @@ int init_frame_buffer_locked(struct private_module_t *module)
 	module->framebuffer = new private_handle_t(private_handle_t::PRIV_FLAGS_FRAMEBUFFER, 0, fbSize, vaddr,
 	        0, fd, 0);
 
+	/* There is no share_fd in framebuffer handle, correct numFds/numInts */
+	module->framebuffer->numFds--;
+	module->framebuffer->numInts++;
+
 	module->numBuffers = info.yres_virtual / info.yres;
 	module->bufferMask = 0;
 
