@@ -10,8 +10,6 @@ on fs
 
 on post-fs-data
     mkdir /data/media 0770 media_rw media_rw
-    insmod /system/lib/modules/compat.ko
-    insmod /system/lib/modules/cfg80211.ko
     insmod /system/lib/modules/brcmutil.ko
     insmod /system/lib/modules/brcmfmac.ko
 
