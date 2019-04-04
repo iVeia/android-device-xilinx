@@ -59,14 +59,14 @@ PRODUCT_PACKAGES += \
     wpa_supplicant.conf
 
 PRODUCT_COPY_FILES +=  \
-    device/xilinx/zcu102/brcm/4343w.hcd:system/lib/firmware/brcm/4343w.hcd \
-    device/xilinx/zcu102/brcm/brcmfmac43430-sdio.bin:system/lib/firmware/brcm/brcmfmac43430-sdio.bin \
-    device/xilinx/zcu102/brcm/brcmfmac43430-sdio.txt:system/lib/firmware/brcm/brcmfmac43430-sdio.txt \
-    device/xilinx/zcu102/brcm/bcm4343w/4343w.hcd:system/lib/firmware/brcm/bcm4343w/4343w.hcd \
-    device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio.bin:system/lib/firmware/brcm/bcm4343w/brcmfmac43430-sdio.bin \
-    device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio.txt:system/lib/firmware/brcm/bcm4343w/brcmfmac43430-sdio.txt \
-    device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt:system/lib/firmware/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt \
-    device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin:system/lib/firmware/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin \
+    device/xilinx/zcu102/brcm/4343w.hcd:system/etc/firmware/brcm/4343w.hcd \
+    device/xilinx/zcu102/brcm/brcmfmac43430-sdio.bin:system/etc/firmware/brcm/brcmfmac43430-sdio.bin \
+    device/xilinx/zcu102/brcm/brcmfmac43430-sdio.txt:system/etc/firmware/brcm/brcmfmac43430-sdio.txt \
+    device/xilinx/zcu102/brcm/bcm4343w/4343w.hcd:system/etc/firmware/brcm/bcm4343w/4343w.hcd \
+    device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio.bin:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio.bin \
+    device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio.txt:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio.txt \
+    device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt \
+    device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin \
 
 # Include libs for SW graphics
 PRODUCT_PACKAGES += libGLES_android
