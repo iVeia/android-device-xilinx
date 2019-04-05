@@ -48,18 +48,20 @@ on post-fs
     write /sys/class/gpio/export 364
     write /sys/class/gpio/gpio364/direction high
 
-    chmod 0666 /dev/i2c-0
-    chmod 0666 /dev/i2c-1
-    chmod 0666 /dev/i2c-2
-    chmod 0666 /dev/i2c-3
-    chmod 0666 /dev/i2c-4
-    chmod 0666 /dev/i2c-5
-    chmod 0666 /dev/i2c-6
-    chmod 0666 /dev/i2c-7
-    chmod 0666 /dev/i2c-8
-    chmod 0666 /dev/i2c-9
-    chmod 0666 /dev/watchdog
-    chmod 0666 /dev/block/mtdblock1
+    chmod 666 /dev/i2c-0
+    chmod 666 /dev/i2c-1
+    chmod 666 /dev/i2c-2
+    chmod 666 /dev/i2c-3
+    chmod 666 /dev/i2c-4
+    chmod 666 /dev/i2c-5
+    chmod 666 /dev/i2c-6
+    chmod 666 /dev/i2c-7
+    chmod 666 /dev/i2c-8
+    chmod 666 /dev/i2c-9
+    chmod 666 /dev/watchdog
+    chmod 777 /dev/block/mtdblock1
+
+    chmod 755 /system/bin/app_update.sh
 
 on boot
     setprop wifi.interface wlan0
@@ -83,6 +85,14 @@ on property:sys.boot_completed=1
 
     # limit system background services to use 2 cores
     write /dev/cpuset/system-background/cpus 0-1
+
+service mbrx_update /system/bin/sh /system/bin/app_update.sh
+    class main
+    user root
+    seclabel u:r:shell:s0
+
+on property:sys.boot_completed=1
+    start mbrx_update
 
 service p2p_supplicant /system/vendor/bin/hw/wpa_supplicant \
     -ip2p0 -Dnl80211 -c/data/misc/wifi/p2p_supplicant.conf \

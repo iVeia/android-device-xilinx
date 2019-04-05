@@ -42,8 +42,8 @@ PRODUCT_COPY_FILES +=  \
     frameworks/native/data/etc/android.hardware.wifi.xml:system/etc/permissions/android.hardware.wifi.xml \
     device/xilinx/zcu102/atmel-maxtouch.idc:system/usr/idc/atmel-maxtouch.idc \
     device/xilinx/zcu102/wpa_supplicant.conf:system/etc/wifi/wpa_supplicant.conf \
-    device/xilinx/zcu102/wpa_supplicant_overlay.conf:system/etc/wifi/wpa_supplicant_overlay.conf 
-    
+    device/xilinx/zcu102/wpa_supplicant_overlay.conf:system/etc/wifi/wpa_supplicant_overlay.conf \
+    device/xilinx/zcu102/scripts/app_update.sh:system/bin/app_update.sh \
 
 # Add libion for graphics
 PRODUCT_PACKAGES += \
