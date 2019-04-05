@@ -53,4 +53,4 @@ PRODUCT_PACKAGES += \
 
 UBOOT_SRC_DIR ?= bootable/u-boot-xlnx
 UBOOT_CFG_NAME ?= xilinx_zynqmp_zcu102_rev1_0_defconfig
-TARGET_UBOOT_BUILT_FROM_SOURCE := true
+TARGET_UBOOT_BUILT_FROM_SOURCE := false
