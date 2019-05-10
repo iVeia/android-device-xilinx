@@ -66,6 +66,9 @@ PRODUCT_PACKAGES += \
 PRODUCT_COPY_FILES +=  \
     device/xilinx/zcu102/audio/wav/piano2.wav:system/media/audio/wav/piano2.wav \
 
+# Add Minibar app
+PRODUCT_PACKAGES += MinibarRxApp
+
 # Add libion for graphics
 PRODUCT_PACKAGES += \
 	libion \
