@@ -38,6 +38,13 @@ on post-fs
     # Set Display density
     setprop ro.sf.lcd_density 160
 
+    # Speaker amp on
+    write /sys/class/gpio/export 366
+    write /sys/class/gpio/gpio366/direction high
+    chmod 666 /dev/snd/controlC0
+    chmod 666 /dev/snd/pcmC0D0p
+    chmod 666 /dev/snd/timer
+
     chown graphics graphics /sys/kernel/debug/sync/sw_sync
     chmod 777 /sys/kernel/debug/sync/sw_sync
 
@@ -108,6 +115,21 @@ on property:sys.boot_completed=1
     copy /etc/ssh/ssh_host_dsa_key /data/etc/ssh/ssh_host_dsa_key
     copy /etc/ssh/ssh_host_rsa_key /data/etc/ssh/ssh_host_rsa_key
     start sshd
+
+service play_boot_sound /system/bin/tinyplay /system/media/audio/wav/piano2.wav
+    class main
+    user root
+    seclabel u:r:shell:s0
+    disabled
+    oneshot
+
+on property:sys.boot_completed=1
+    start play_boot_sound
+
+# ALSA audio mixer defaults for speaker out
+on property:sys.boot_completed=1
+    exec u:r:shell:s0 root -- /system/bin/tinymix "Right Output Mixer PCM Playback Switch" 1
+    exec u:r:shell:s0 root -- /system/bin/tinymix "Headphone Playback Volume" 110
 
 service p2p_supplicant /system/vendor/bin/hw/wpa_supplicant \
     -ip2p0 -Dnl80211 -c/data/misc/wifi/p2p_supplicant.conf \

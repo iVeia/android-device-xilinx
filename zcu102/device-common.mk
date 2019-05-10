@@ -56,6 +56,16 @@ PRODUCT_COPY_FILES +=  \
     device/xilinx/zcu102/ssh/ssh_host_rsa_key.pub:system/etc/ssh/ssh_host_rsa_key.pub \
     device/xilinx/zcu102/ssh/empty:root/var/run/ssh/empty/empty \
 
+# Add tinyalsa
+PRODUCT_PACKAGES += \
+    tinyplay \
+    tinycap \
+    tinymix \
+    tinypcminfo \
+    cplay
+PRODUCT_COPY_FILES +=  \
+    device/xilinx/zcu102/audio/wav/piano2.wav:system/media/audio/wav/piano2.wav \
+
 # Add libion for graphics
 PRODUCT_PACKAGES += \
 	libion \
