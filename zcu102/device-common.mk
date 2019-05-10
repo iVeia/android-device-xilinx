@@ -45,6 +45,17 @@ PRODUCT_COPY_FILES +=  \
     device/xilinx/zcu102/wpa_supplicant_overlay.conf:system/etc/wifi/wpa_supplicant_overlay.conf \
     device/xilinx/zcu102/scripts/app_update.sh:system/bin/app_update.sh \
 
+# Add sshd
+PRODUCT_PACKAGES += ssh sftp scp sshd ssh-keygen sshd_config start-ssh
+PRODUCT_COPY_FILES +=  \
+    device/xilinx/zcu102/ssh/authorized_keys:system/etc/ssh/authorized_keys \
+    device/xilinx/zcu102/ssh/sshd_config:system/etc/ssh/sshd_config \
+    device/xilinx/zcu102/ssh/ssh_host_dsa_key:system/etc/ssh/ssh_host_dsa_key \
+    device/xilinx/zcu102/ssh/ssh_host_dsa_key.pub:system/etc/ssh/ssh_host_dsa_key.pub \
+    device/xilinx/zcu102/ssh/ssh_host_rsa_key:system/etc/ssh/ssh_host_rsa_key \
+    device/xilinx/zcu102/ssh/ssh_host_rsa_key.pub:system/etc/ssh/ssh_host_rsa_key.pub \
+    device/xilinx/zcu102/ssh/empty:root/var/run/ssh/empty/empty \
+
 # Add libion for graphics
 PRODUCT_PACKAGES += \
 	libion \

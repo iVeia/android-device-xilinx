@@ -94,6 +94,21 @@ service mbrx_update /system/bin/sh /system/bin/app_update.sh
 on property:sys.boot_completed=1
     start mbrx_update
 
+service sshd /system/bin/sshd -f /system/etc/ssh/sshd_config
+    class main
+    user root
+    seclabel u:r:shell:s0
+    disabled
+    oneshot
+
+on property:sys.boot_completed=1
+    mkdir /data/etc
+    mkdir /data/etc/ssh
+    copy /etc/ssh/authorized_keys /data/etc/ssh/authorized_keys
+    copy /etc/ssh/ssh_host_dsa_key /data/etc/ssh/ssh_host_dsa_key
+    copy /etc/ssh/ssh_host_rsa_key /data/etc/ssh/ssh_host_rsa_key
+    start sshd
+
 service p2p_supplicant /system/vendor/bin/hw/wpa_supplicant \
     -ip2p0 -Dnl80211 -c/data/misc/wifi/p2p_supplicant.conf \
     -I/system/etc/wifi/p2p_supplicant_overlay.conf -N \
