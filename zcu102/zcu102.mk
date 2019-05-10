@@ -37,7 +37,7 @@ PRODUCT_MANUFACTURER := Xilinx
 KERNEL_SRC_DIR ?= $(ANDROID_BUILD_TOP)/linux-iveia
 KERNEL_CFG_NAME ?= iveia_atlas_ii_z8_defconfig
 KERNEL_DTS_NAMES ?= \
-	iveia-atlas-ii-z8.dts
+	iveia-helios-z8.dts
 
 # Check for availability of kernel source
 ifneq ($(wildcard $(KERNEL_SRC_DIR)/Makefile),)
