@@ -27,9 +27,10 @@ PRODUCT_COPY_FILES += \
 PRODUCT_COPY_FILES += \
    $(LOCAL_PATH)/uEnv.txt:boot/uEnv.txt
 
-# Copy prebuilt BOOT.BIN if it exists
-PRODUCT_COPY_FILES += $(call add-to-product-copy-files-if-exists,\
-	$(LOCAL_PATH)/BOOT.BIN:boot/BOOT.BIN)
+# Copy prebuilt binaries
+PRODUCT_COPY_FILES += \
+	$(LOCAL_PATH)/fsbl.bin:fsbl.bin \
+	$(LOCAL_PATH)/xilinx.bit:boot/xilinx.bit
 
 # Remove nav bar
 PRODUCT_PROPERTY_OVERRIDES += qemu.hw.mainkeys=1

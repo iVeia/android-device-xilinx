@@ -16,26 +16,6 @@ else
 	product=zcu102;
 fi
 
-if [ $# -ge 3 ]; then
-	silicon=$3;
-else
-	silicon=es1;
-fi
-
-if [[ ! "$silicon" == "es1" ]]; then
-	if [[ ! "$silicon" == "es2" ]]; then
-		echo "!!! Error: silicon revision must be es1 or es2";
-		exit 1;
-	fi
-fi
-
-echo "========= build SD card for product $product";
-
-if ! [ -d out/target/product/$product/boot ]; then
-   echo "!!! Error: Missing out/target/product/$product";
-   exit 1;
-fi
-
 removable_disks() {
 	for f in `ls /dev/disk/by-path/* | grep -v part` ; do
 		diskname=$(basename `readlink $f`);
@@ -139,37 +119,41 @@ mkfs.ext4 -F -L DATA ${diskname}${prefix}4
 
 echo "========= populating BOOT partition"
 if [ -e ${diskname}${prefix}1 ]; then
-	mkdir -p /tmp/$$/boot_part
-	mount -t vfat ${diskname}${prefix}1 /tmp/$$/boot_part
-	cp -rfv out/target/product/$product/boot/BOOT* /tmp/$$/boot_part/
-	cp -rfv out/target/product/$product/boot/kernel /tmp/$$/boot_part/Image
-	cp -rfv out/target/product/$product/boot/*.dtb /tmp/$$/boot_part/
-	cp -rfv out/target/product/$product/boot/*.bit /tmp/$$/boot_part/
-	cp -rfv out/target/product/$product/boot/uEnv.txt /tmp/$$/boot_part/uEnv.txt
-	cp -rfv out/target/product/$product/boot/uramdisk.img /tmp/$$/boot_part/uramdisk.img
+	mkdir -p /tmp/boot_part
+	mount -t vfat ${diskname}${prefix}1 /tmp/boot_part
+	cp -rfv /root/boot/* /tmp/boot_part/
 	sync
-	umount /tmp/$$/boot_part
-	rm -rf /tmp/$$/boot_part
+	umount /tmp/boot_part
+	rm -rf /tmp/boot_part
 else
    echo "!!! Error: missing BOOT partition ${diskname}${prefix}1";
    exit 1
 fi
 
+echo "========= populating ROOT partition"
+if [ -e ${diskname}${prefix}2 ]; then
+    mkdir -p /tmp/root_part
+	mount -t ext4 ${diskname}${prefix}2 /tmp/root_part
+	cp -r /root/root/* /tmp/root_part/
+	sync
+	umount /tmp/root_part
+	rm -rf /tmp/root_part
+else
+	echo "!!! Error: missing ROOT partition ${diskname}${prefix}2";
+	exit 1
+fi
+
 echo "========= populating SYSTEM partition"
 if [ -e ${diskname}${prefix}5 ]; then
-	sudo dd if=out/target/product/$product/system.img of=${diskname}${prefix}5
-	sudo e2label ${diskname}${prefix}5 SYSTEM
-	sudo e2fsck -f ${diskname}${prefix}5
-	sudo resize2fs ${diskname}${prefix}5
-	if [[ "$silicon" == "es1" ]]; then
-		mkdir -p /tmp/$$/system_part
-		mount -t ext4 ${diskname}${prefix}5 /tmp/$$/system_part
-		sudo mv /tmp/$$/system_part/lib/egl/libGLES_mali.so_es1 /tmp/$$/system_part/lib/egl/libGLES_mali.so
-		sudo mv /tmp/$$/system_part/lib64/egl/libGLES_mali.so_es1 /tmp/$$/system_part/lib64/egl/libGLES_mali.so
-		sync
-		umount /tmp/$$/system_part
-		rm -rf /tmp/$$/system_part
-	fi
+	dd if=/root/system.img of=${diskname}${prefix}5
+	e2label ${diskname}${prefix}5 SYSTEM
+	e2fsck -f ${diskname}${prefix}5
+    mkdir -p /tmp/sys_part
+    mount -t ext4 ${diskname}${prefix}5 /tmp/sys_part
+    cp -r /root/modules /tmp/sys_part/lib/
+    sync
+    umount /tmp/sys_part
+    rm -rf /tmp/sys_part
 else
 	echo "!!! Error: missing SYSTEM partition ${diskname}${prefix}5";
 	exit 1

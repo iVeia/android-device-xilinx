@@ -1,0 +1,40 @@
+#!/bin/bash
+
+OUT="${ANDROID_PRODUCT_OUT}"
+if [ -z "${OUT}" ]; then
+    echo "ERROR: Android environment/lunch need to be setup"
+    exit
+fi
+
+FILES=(
+    boot
+    fsbl.bin
+    mksdcard.sh
+    boot
+    modules
+    root
+    system.img
+    )
+
+#
+# Modules are copied seprately - this would be better moved into the build, and
+# copied to /system/vendor/modules (instead of having mksdcard.sh do it).
+#
+BRCM_DIR="${OUT}/obj/KERNEL_OBJ/drivers/net/wireless/broadcom/brcm80211"
+MODULES_OUT="${OUT}/modules"
+MODULES=(
+    "${BRCM_DIR}/brcmfmac/brcmfmac.ko"
+    "${BRCM_DIR}/brcmutil/brcmutil.ko"
+    )
+mkdir -p "${MODULES_OUT}"
+cp "${MODULES[@]}" "${MODULES_OUT}"
+
+#
+# tar up with transformed SDHOME top level dir
+#
+FILES_WITH_UPDIR=()
+for f in "${FILES[@]}"; do
+    FILES_WITH_UPDIR+=("${TARGET_PRODUCT}/$f")
+done
+tar czvf "${OUT}/SDHOME.tar.gz" --transform 's,^zcu102/,SDHOME/,' --show-stored-names \
+    -C "${OUT}/.." "${FILES_WITH_UPDIR[@]}"

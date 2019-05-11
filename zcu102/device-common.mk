@@ -92,6 +92,11 @@ PRODUCT_COPY_FILES +=  \
     device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt \
     device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin \
 
+# eMMC install script
+PRODUCT_COPY_FILES += \
+    device/xilinx/zcu102/scripts/release:release \
+    device/xilinx/common/scripts/mksdcard.sh:mksdcard.sh
+
 # Include libs for SW graphics
 PRODUCT_PACKAGES += libGLES_android
 
