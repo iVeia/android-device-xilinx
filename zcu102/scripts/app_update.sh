@@ -1,10 +1,24 @@
 #!/system/bin/sh
+INITIAL_FILE="/MinibarRxApp.apk"
 FILE="/sdcard/Download/MinibarRxApp.apk"
 REBOOT_FILE="/data/data/com.minibarna.vending.machine.rx/app_rx_scripts/noReboot.txt"
 polling_interval=60
 echo "looking for new apk..."
 
 while true; do
+
+	if [ -f $INITIAL_FILE ]; then
+		if [ -e "/sdcard/Download" ]; then
+			echo "$0: Initial install..."
+			# Move the initial apk, only happens the first time
+			mount -o rw,remount /
+			mv $INITIAL_FILE $FILE
+			mount -o ro,remount /
+		else
+			echo "$0: still booting up..."
+		fi
+	fi
+	
     # Check if we have noReboot.txt file, if so we don't want to check
     # since we don't want a reboot when the user is logged in
     if [[ -e $REBOOT_FILE ]]; then
