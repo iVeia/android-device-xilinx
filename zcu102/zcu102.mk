@@ -30,7 +30,7 @@ $(call inherit-product-if-exists, vendor/xilinx/zynqmp/device-vendor.mk)
 PRODUCT_NAME := zcu102
 PRODUCT_DEVICE := zcu102
 PRODUCT_BRAND := Android
-PRODUCT_MODEL := AOSP on ZynqMP ZCU102
+PRODUCT_MODEL := AOSP on ZynqMP iVeia Helios-Z8
 PRODUCT_MANUFACTURER := Xilinx
 
 # Specify variables for kernel build
