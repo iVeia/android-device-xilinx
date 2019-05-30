@@ -129,7 +129,7 @@ on property:sys.boot_completed=1
 # ALSA audio mixer defaults for speaker out
 on property:sys.boot_completed=1
     exec u:r:shell:s0 root -- /system/bin/tinymix "Right Output Mixer PCM Playback Switch" 1
-    exec u:r:shell:s0 root -- /system/bin/tinymix "Headphone Playback Volume" 110
+    exec u:r:shell:s0 root -- /system/bin/tinymix "Headphone Playback Volume" 118
 
 service p2p_supplicant /system/vendor/bin/hw/wpa_supplicant \
     -ip2p0 -Dnl80211 -c/data/misc/wifi/p2p_supplicant.conf \
