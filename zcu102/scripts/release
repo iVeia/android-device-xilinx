@@ -7,7 +7,6 @@ if [ -z "${OUT}" ]; then
 fi
 
 FILES=(
-    boot
     fsbl.bin
     mksdcard.sh
     boot
