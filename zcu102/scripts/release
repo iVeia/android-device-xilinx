@@ -8,6 +8,7 @@ fi
 
 FILES=(
     boot
+    bi
     fsbl.bin
     mksdcard.sh
     boot
@@ -28,6 +29,11 @@ MODULES=(
     )
 mkdir -p "${MODULES_OUT}"
 cp "${MODULES[@]}" "${MODULES_OUT}"
+
+cp "${OUT}/boot/Image" "${OUT}/bi/"
+cp "${OUT}/boot/iveia-atlas-ii-z8.dtb" "${OUT}/bi"
+cp "${OUT}/boot/iveia-helios-z8.dtb" "${OUT}/bi"
+mv "${OUT}/root/ota_tmp/sample_manifest" "${OUT}/root/"
 
 #
 # tar up with transformed SDHOME top level dir

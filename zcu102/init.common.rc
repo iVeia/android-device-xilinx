@@ -108,6 +108,12 @@ service sshd /system/bin/sshd -f /system/etc/ssh/sshd_config
     disabled
     oneshot
 
+service iVeiOTA /system/bin/iVeiOTA
+        class main
+        user root
+        disabled
+        oneshot
+
 on property:sys.boot_completed=1
     mkdir /data/etc
     mkdir /data/etc/ssh
@@ -115,6 +121,7 @@ on property:sys.boot_completed=1
     copy /etc/ssh/ssh_host_dsa_key /data/etc/ssh/ssh_host_dsa_key
     copy /etc/ssh/ssh_host_rsa_key /data/etc/ssh/ssh_host_rsa_key
     start sshd
+    start iVeiOTA
 
 service play_boot_sound /system/bin/tinyplay /system/media/audio/wav/piano2.wav
     class main
