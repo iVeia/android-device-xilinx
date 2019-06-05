@@ -14,6 +14,7 @@ namespace iVeiOTA {
     BootInfo,
     Boot,
     QSPI,
+    Cache,
     Data,
     
     None,
@@ -28,6 +29,7 @@ namespace iVeiOTA {
     case Partition::BootInfo : return "BootInfo";
     case Partition::Boot     : return "Boot";
     case Partition::QSPI     : return "QSPI";
+    case Partition::Cache    : return "Cache";
     case Partition::Data     : return "Data";
     case Partition::None     : return "None"; 
     case Partition::Unknown  : return "Unknown";
@@ -54,6 +56,7 @@ namespace iVeiOTA {
   
   uint64_t CopyFileData(const std::string &dest, const std::string &src, 
                         uint64_t offset, uint64_t len);
+  int RemoveAllFiles(const std::string &path, bool recursive);
   
   //TODO: Consider replacing these with returns of unique_ptr if copying becomes too much
   std::vector<std::string> Split(std::string str, std::string delims);

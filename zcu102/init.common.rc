@@ -111,6 +111,7 @@ service sshd /system/bin/sshd -f /system/etc/ssh/sshd_config
 service iVeiOTA /system/bin/iVeiOTA
         class main
         user root
+        seclabel u:r:shell:s0
         disabled
         oneshot
 

@@ -4,9 +4,12 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/uio.h>
+#include <stdio.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <array>
 
 #include "support.hh"
-
 #include "debug.hh"
 
 namespace iVeiOTA {
@@ -17,6 +20,7 @@ namespace iVeiOTA {
         else if(name == "boot")      return Partition::Boot;
         else if(name == "qspi")      return Partition::QSPI;
         else if(name == "data")      return Partition::Data;
+        else if(name == "cache")     return Partition::Cache;
 
         // Dont have an entry here for none.  It shouldn't be able to be
         //  created from a config file.  Just internally
@@ -26,6 +30,76 @@ namespace iVeiOTA {
 
   char CurrentPartition() {
     throw "Get partition not implemented yet!";
+  }
+
+  std::string RunCommand(std::string command) {
+    std::array<char, 256> buffer;
+    std::string result;
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
+    if (!pipe) {
+      debug << Debug::Mode::Err << "Failed to open pipe to run command " << command << std::endl << Debug::Mode::Info;
+    }
+    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+      result += buffer.data();
+    }
+    return result;
+  }
+  
+  bool dirExists(std::string dir_path) {
+    struct stat sb;
+    
+    if (stat(dir_path.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode))
+      return true;
+    else
+      return false;
+  }
+
+  int RemoveAllFiles(const std::string &path, bool recursive) {
+    if (path.empty()) return 0;
+
+    DIR *theFolder = opendir(path.c_str());
+    struct dirent *next_file;
+    char filepath[1024];
+    int ret_val;
+
+    if (theFolder == NULL) return errno;
+
+    while ( (next_file = readdir(theFolder)) != NULL ) {
+      // build the path for each file in the folder
+      sprintf(filepath, "%s/%s", path.c_str(), next_file->d_name);
+      
+      //we don't want to process the pointer to "this" or "parent" directory
+      if ((strcmp(next_file->d_name,"..") == 0) || (strcmp(next_file->d_name,"." ) == 0) ) {
+        continue;
+      }
+      
+      //dirExists will check if the "filepath" is a directory
+      if (dirExists(filepath)) {
+        if (!recursive) {
+          //if we aren't recursively deleting in subfolders, skip this dir
+          continue;
+        }
+        
+        ret_val = RemoveAllFiles(filepath, recursive);
+        
+        if (ret_val != 0) {
+          closedir(theFolder);
+          return ret_val;
+        }
+      }
+      
+      ret_val = remove(filepath);
+      //ENOENT occurs when i folder is empty, or is a dangling link, in
+      //which case we will say it was a success because the file is gone
+      if (ret_val != 0 && ret_val != ENOENT) {
+        closedir(theFolder);
+        return ret_val;
+      }      
+    }
+    
+    closedir(theFolder);
+    
+    return 0;
   }
   
   uint64_t CopyFileData(const std::string &dest, const std::string &src, 
@@ -144,9 +218,14 @@ namespace iVeiOTA {
       if(line.length() > 0) {
         // Individual tokens are white space seperated
         auto toks = Split(line, " \t");
-        if(toks.size() >= 2) {
-          if(dev && toks[0] == name) return toks[1];
-          else if(toks[1] == name)   return toks[0];
+        if(toks.size() >= 2) {          
+          if(dev && toks[0] == name) {
+            debug << "Found device " << name << ":" << line << std::endl;
+            return toks[1];
+          } else if(toks[1] == name) {
+            return toks[0];
+            debug << "Found " << name << ":" << line << std::endl;
+          }
         }
       }
     }
@@ -171,7 +250,7 @@ namespace iVeiOTA {
     
     // device already mounted
     if(mpath.length() > 0) {
-      debug << "Already mounted" << std::endl;
+      debug << "Already mounted: " << dev << ":" << mpath << std::endl;
       isMounted = false;
       wasMounted = true;
       return;

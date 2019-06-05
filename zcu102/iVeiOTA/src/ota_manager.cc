@@ -310,6 +310,20 @@ namespace iVeiOTA {
           CopyFileData(dest, src, 0, 0);
         }
 
+        // Then we have to clear the cache
+        {
+          debug << "clearing the cache" << std::endl;
+          std::string cache = config.GetDevice(Container::Alternate, Partition::Cache);
+          if(cache.length() > 1) {
+            Mount mount(cache, IVEIOTA_MNT_POINT);
+            if(mount.IsMounted()) {
+              RemoveAllFiles(mount.Path() + "/", true);
+            } else {
+              debug << Debug::Mode::Err << "Unable to mount cache partition" << std::endl << Debug::Mode::Info;
+            }
+          }
+        }
+
         // Then we have to move the fstab file over
         {
           std::string dev = config.GetDevice(Container::Alternate, Partition::Root);    

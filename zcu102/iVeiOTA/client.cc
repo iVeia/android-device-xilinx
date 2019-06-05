@@ -45,20 +45,24 @@ int main(int argc, char ** argv) {
         {"--process",  true,  Message::OTAUpdate,      Message::OTAUpdate.ProcessChunk},
         {"--finalize", false, Message::OTAUpdate,      Message::OTAUpdate.Finalize},
 
-        {"--ostatus",   false, Message::OTAStatus,      Message::OTAStatus.UpdateStatus},
+        {"--ostatus",  false, Message::OTAStatus,      Message::OTAStatus.UpdateStatus},
         {"--cstatus",  false, Message::OTAStatus,      Message::OTAStatus.ChunkStatus},
 
         {"--valid",    false, Message::BootManagement, Message::BootManagement.SetValidity},
-        {"--success",  false, Message::BootManagement, Message::BootManagement.MarkUpdateSuccess},
+        {"--usuccess", true, Message::BootManagement, Message::BootManagement.MarkUpdateSuccess},
+        {"--bsuccess", true, Message::BootManagement, Message::BootManagement.ResetBootCount},
 
         {0, false, 0, 0},
     };
 
     vector<Message> messages;
+    bool noCopy = false;
     for(int i = 1; i < argc; i++) {
         int j = 0;
         while(true) {
             if(commands[j].arg == 0) break;
+
+            if(strncmp(argv[i], "--nocopy", 8) == 0) noCopy = true;
 
             if(strncmp(commands[j].arg, argv[i], strlen(commands[j].arg)) == 0) {
                 uint32_t i1=0, i2=0, i3=0, i4=0;
@@ -75,12 +79,18 @@ int main(int argc, char ** argv) {
                     
                     // This needs a path to the manifest file
                     i1 = 1; // Manifest on filesystem
-                    i4 = 42; // no copy for convenience sake
+                    if(noCopy) i4 = 42; // no copy for convenience sake
                     for(int q = 0; q < (int)strlen(argv[i]); q++) {
                       payload.push_back(argv[i][q]);
                     }
                     payload.push_back('\0');
                   } // end begin
+
+                  else if(strcmp(commands[j].arg, "--usuccess") == 0 ||
+                          strcmp(commands[j].arg, "--bsuccess") == 0) {
+                    i1 = 1; // current container
+                  } // end successes
+                                 
 
                   else if(strcmp(commands[j].arg, "--process") == 0) {
                     i += 2;
