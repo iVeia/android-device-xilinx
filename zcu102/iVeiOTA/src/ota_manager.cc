@@ -315,6 +315,8 @@ namespace iVeiOTA {
           debug << "clearing the cache" << std::endl;
           std::string cache = config.GetDevice(Container::Alternate, Partition::Cache);
           if(cache.length() > 1) {
+            // Make sure we have something to try and mount
+            // TODO: Should add more checks here.  This can be very destructure
             Mount mount(cache, IVEIOTA_MNT_POINT);
             if(mount.IsMounted()) {
               RemoveAllFiles(mount.Path() + "/", true);
@@ -328,7 +330,7 @@ namespace iVeiOTA {
         {
           std::string dev = config.GetDevice(Container::Alternate, Partition::Root);    
           Mount mount(dev, IVEIOTA_MNT_POINT);
-          std::string fSrc = mount.Path() + "/" + "fstab.zcu102." + config.GetContainerName(Container::Alternate);
+          std::string fSrc = mount.Path() + "/fstab.zcu102." + config.GetContainerName(Container::Alternate);
           std::string fDest = mount.Path() + "/fstab.zcu102";
           
           if(!mount.IsMounted()) {

@@ -49,8 +49,7 @@ endif
 
 # Include gralloc for Mali GPU
 PRODUCT_PACKAGES += \
-	gralloc.zynqmp \
-	iVeiOTA_server
+	gralloc.zynqmp
 
 UBOOT_SRC_DIR ?= bootable/u-boot-xlnx
 UBOOT_CFG_NAME ?= xilinx_zynqmp_zcu102_rev1_0_defconfig

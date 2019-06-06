@@ -62,8 +62,11 @@ int main(int argc, char ** argv) {
         while(true) {
             if(commands[j].arg == 0) break;
 
-            if(strncmp(argv[i], "--nocopy", 8) == 0) noCopy = true;
-
+            if(strncmp(argv[i], "--nocopy", 8) == 0) {
+              cout << "Doing a no copy" << endl;
+              noCopy = true;
+            }
+            
             if(strncmp(commands[j].arg, argv[i], strlen(commands[j].arg)) == 0) {
                 uint32_t i1=0, i2=0, i3=0, i4=0;
                 vector<uint8_t> payload;
@@ -114,7 +117,9 @@ int main(int argc, char ** argv) {
                   
                 }
 
-                cout << "pushing message: " << (int)commands[j].cmd << ":" << payload.size() << endl;
+                cout << "pushing message: " << (int)commands[j].cmd << ":" << (int)commands[j].subCmd <<
+                  ":" << i1 << ":" << i2 << ":" << i3 << ":" << i4 << ":" << payload.size() << endl;
+
                 messages.push_back(Message(commands[j].cmd, commands[j].subCmd,
                                            i1, i2, i3, i4, 
                                            payload));

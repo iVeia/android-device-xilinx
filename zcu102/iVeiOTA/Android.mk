@@ -113,65 +113,66 @@ LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_EXECUTABLE)
 
-##############copy config file##################
-include $(CLEAR_VARS)
-LOCAL_MODULE := iVeiOTA.conf
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_CLASS := ETC
-LOCAL_MODULE_PATH := $(TARGET_OUT)/etc/
-LOCAL_SRC_FILES := config/iVeiOTA.conf
-include $(BUILD_PREBUILT)
-
-##############copy config file##################
-include $(CLEAR_VARS)
-LOCAL_MODULE := fstab.zcu102.a
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_CLASS := ETC
-LOCAL_MODULE_PATH := $(ANDROID_PRODUCT_OUT)/root/
-LOCAL_SRC_FILES := config/fstab.zcu102.a
-include $(BUILD_PREBUILT)
-
-##############copy config file##################
-include $(CLEAR_VARS)
-LOCAL_MODULE := fstab.zcu102.b
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_CLASS := ETC
-LOCAL_MODULE_PATH := $(ANDROID_PRODUCT_OUT)/root
-LOCAL_SRC_FILES := config/fstab.zcu102.b
-include $(BUILD_PREBUILT)
-
-##############copy config file##################
-include $(CLEAR_VARS)
-LOCAL_MODULE := sample_manifest
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_CLASS := ETC
-LOCAL_MODULE_PATH := $(ANDROID_PRODUCT_OUT)/root/ota_tmp/
-LOCAL_SRC_FILES := test/sample_manifest
-include $(BUILD_PREBUILT)
-
-##############copy config file##################
-include $(CLEAR_VARS)
-LOCAL_MODULE := uEnv.txt
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_CLASS := ETC
-LOCAL_MODULE_PATH := $(ANDROID_PRODUCT_OUT)/boot/
-LOCAL_SRC_FILES := config/uEnv.txt
-include $(BUILD_PREBUILT)
-
-##############copy config file##################
-include $(CLEAR_VARS)
-LOCAL_MODULE := AB.img
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_CLASS := ETC
-LOCAL_MODULE_PATH := $(ANDROID_PRODUCT_OUT)/boot/
-LOCAL_SRC_FILES := config/AB.img
-include $(BUILD_PREBUILT)
-
-##############copy config file##################
-include $(CLEAR_VARS)
-LOCAL_MODULE := uEnvAB.txt
-LOCAL_MODULE_TAGS := optional
-LOCAL_MODULE_CLASS := ETC
-LOCAL_MODULE_PATH := $(ANDROID_PRODUCT_OUT)/bi/
-LOCAL_SRC_FILES := config/uEnvAB.txt
-include $(BUILD_PREBUILT)
+## ##############copy config file##################
+## include $(CLEAR_VARS)
+## LOCAL_MODULE := iVeiOTA.conf
+## LOCAL_MODULE_TAGS := optional
+## LOCAL_MODULE_CLASS := ETC
+## LOCAL_MODULE_PATH := $(TARGET_OUT)/etc/
+## LOCAL_SRC_FILES := config/iVeiOTA.conf
+## include $(BUILD_PREBUILT)
+## 
+## ##############copy config file##################
+## include $(CLEAR_VARS)
+## LOCAL_MODULE := fstab.zcu102.a
+## LOCAL_MODULE_TAGS := optional
+## LOCAL_MODULE_CLASS := ETC
+## LOCAL_MODULE_PATH := $(ANDROID_PRODUCT_OUT)/root/
+## LOCAL_SRC_FILES := config/fstab.zcu102.a
+## include $(BUILD_PREBUILT)
+## 
+## ##############copy config file##################
+## include $(CLEAR_VARS)
+## LOCAL_MODULE := fstab.zcu102.b
+## LOCAL_MODULE_TAGS := optional
+## LOCAL_MODULE_CLASS := ETC
+## LOCAL_MODULE_PATH := $(ANDROID_PRODUCT_OUT)/root
+## LOCAL_SRC_FILES := config/fstab.zcu102.b
+## include $(BUILD_PREBUILT)
+## 
+## ##############copy config file##################
+## include $(CLEAR_VARS)
+## LOCAL_MODULE := sample_manifest
+## LOCAL_MODULE_TAGS := optional
+## LOCAL_MODULE_CLASS := ETC
+## LOCAL_MODULE_PATH := $(ANDROID_PRODUCT_OUT)/root/ota_tmp/
+## LOCAL_SRC_FILES := test/sample_manifest
+## include $(BUILD_PREBUILT)
+## 
+## ##############copy config file##################
+## include $(CLEAR_VARS)
+## LOCAL_MODULE := uEnv.txt
+## LOCAL_MODULE_TAGS := optional
+## LOCAL_MODULE_CLASS := ETC
+## LOCAL_MODULE_PATH := $(ANDROID_PRODUCT_OUT)/boot/
+## LOCAL_SRC_FILES := config/uEnv.txt
+## include $(BUILD_PREBUILT)
+## 
+## ##############copy config file##################
+## include $(CLEAR_VARS)
+## LOCAL_MODULE := AB.img
+## LOCAL_MODULE_TAGS := optional
+## LOCAL_MODULE_CLASS := ETC
+## LOCAL_MODULE_PATH := $(ANDROID_PRODUCT_OUT)/boot/
+## LOCAL_SRC_FILES := config/AB.img
+## include $(BUILD_PREBUILT)
+## 
+## ##############copy config file##################
+## include $(CLEAR_VARS)
+## LOCAL_MODULE := uEnvAB.txt
+## LOCAL_MODULE_TAGS := optional
+## LOCAL_MODULE_CLASS := ETC
+## LOCAL_MODULE_PATH := $(ANDROID_PRODUCT_OUT)/bi/
+## LOCAL_SRC_FILES := config/uEnvAB.txt
+## include $(BUILD_PREBUILT)
+## 
