@@ -22,6 +22,4 @@
 // Location of the OTA cache for restoration after a power cycle
 #define IVEIOTA_CACHE_LOCATION    "/data/iVeiOTA/cache"
 
-
-
 #endif

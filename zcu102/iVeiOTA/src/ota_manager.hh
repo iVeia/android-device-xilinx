@@ -49,7 +49,6 @@ class OTAManager {
         bool succeeded;
     };
     
-    std::thread initThread;
     int         initStatus;
     bool        initCancel;
 

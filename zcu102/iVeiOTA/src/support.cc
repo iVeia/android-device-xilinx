@@ -14,34 +14,42 @@
 
 namespace iVeiOTA {
   Partition GetPartition(const std::string &name) {
-        if(name == "root")           return Partition::Root;
-        else if(name == "system")    return Partition::System;
-        else if(name == "boot_info") return Partition::BootInfo;
-        else if(name == "boot")      return Partition::Boot;
-        else if(name == "qspi")      return Partition::QSPI;
-        else if(name == "data")      return Partition::Data;
-        else if(name == "cache")     return Partition::Cache;
-
-        // Dont have an entry here for none.  It shouldn't be able to be
-        //  created from a config file.  Just internally
-
-        else                         return Partition::Unknown;
-    }
-
-  char CurrentPartition() {
-    throw "Get partition not implemented yet!";
+    if(name == "root")           return Partition::Root;
+    else if(name == "system")    return Partition::System;
+    else if(name == "boot_info") return Partition::BootInfo;
+    else if(name == "boot")      return Partition::Boot;
+    else if(name == "qspi")      return Partition::QSPI;
+    else if(name == "data")      return Partition::Data;
+    else if(name == "cache")     return Partition::Cache;
+    
+    // Dont have an entry here for Partition::None.  It shouldn't be able to be
+    //  created from a config file.  Just internally
+    
+    else                         return Partition::Unknown;
   }
 
+  HashAlgorithm GetHashAlgorithm(const std::string &name) {
+    if(name == "md5")    return HashAlgorithm::MD5;
+    if(name == "sha1")   return HashAlgorithm::SHA1;
+    if(name == "sha256") return HashAlgorithm::SHA256;
+    if(name == "sha512") return HashAlgorithm::SHA512;
+    if(name == "none")   return HashAlgorithm::None;
+
+    else                 return HashAlgorithm::Unknown;
+  }
+    
   std::string RunCommand(std::string command) {
     std::array<char, 256> buffer;
     std::string result;
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
+    debug << "Running command: " << command << std::endl;
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);    
     if (!pipe) {
       debug << Debug::Mode::Err << "Failed to open pipe to run command " << command << std::endl << Debug::Mode::Info;
     }
     while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
       result += buffer.data();
     }
+    debug << Debug::Mode::Info << "Run command: " << command << " with output " << result << std::endl;
     return result;
   }
   

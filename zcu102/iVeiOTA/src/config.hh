@@ -26,7 +26,7 @@ namespace iVeiOTA {
     std::string cmdLinePath;
     
     std::map<Container, std::map<Partition, std::string>> partitions;
-    //std::vector<partition_info> partitions;
+    std::map<HashAlgorithm, std::string> hashAlgorithms;
     
     std::string active;
     std::string alternate;

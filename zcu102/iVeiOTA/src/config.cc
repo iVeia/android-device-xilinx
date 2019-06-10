@@ -5,6 +5,7 @@
 
 #include "config.hh"
 #include "debug.hh"
+#include "support.hh"
 
 namespace iVeiOTA {
   GlobalConfig config;
@@ -60,12 +61,19 @@ namespace iVeiOTA {
 
     // Get the config file next
     try {
-      debug << "Reading config file" << std::endl;
+      debug << "Reading config file: " << configPath << std::endl;
       std::ifstream conf(configPath);
       std::string line;
+
+      // The config file is a simeple token:value1:value2:.. sequence of lines
+      //  Not parameter may cross a line, and each parameter is a full line
       while(std::getline(conf, line)) {
         std::vector<std::string> toks = Split(line, ":");
         if(toks.size() > 0) {
+
+          // partition:type:name:device_file
+          //  type is determined by the bootload (currently a or b), which is obtained from the kernel command line
+          //
           if(toks[0] == "partition") {
             if(toks.size() < 4) continue; // Invalid
             std::string which = toks[1];
@@ -82,15 +90,8 @@ namespace iVeiOTA {
 
             // TODO: Need to check the device file existence too?
             if(container != Container::Unknown && part != Partition::Unknown) {
-              debug << Debug::Mode::Debug <<
+              debug << Debug::Mode::Info <<
                 "Inserting: " << ToString(container) << ":" << ToString(part) << ":" << dev << std::endl;
-
-              //partition_info _info;
-              //_info.container = container;
-              //_info.partition = part;
-              //_info.device = dev;
-              //partitions.push_back(_info);
-              
               partitions[container].insert(std::make_pair(part, dev));
               
             } else {
@@ -99,12 +100,27 @@ namespace iVeiOTA {
                 "Unknown partition in config file: " << which << ":" << name << ":" << dev << std::endl <<
                 Debug::Mode::Info;
             }
-          }
+          } // end if(toks[0] == "partition"
+
+          else if(toks[0] == "hash_prog") {
+            if(toks.size() < 3) continue; // Invalid
+            std::string name = toks[1];
+            std::string path = toks[2];
+
+            debug << "Hash Algorithm: " << name << ":" << path << std::endl;
+            
+            HashAlgorithm algo = GetHashAlgorithm(name);
+            if(algo != HashAlgorithm::Unknown) {
+              // TODO: CHeck if this path exists
+              hashAlgorithms[algo] = path;
+            }
+          } // end if(toks[0] == "hash_prog")
+          
         }
       }
       
     } catch(...) {
-      debug << Debug::Mode::Failure << "Failed to read command line" << std::endl << Debug::Mode::Info;
+      debug << Debug::Mode::Failure << "Failed to read config file" << std::endl << Debug::Mode::Info;
     }
   }
 

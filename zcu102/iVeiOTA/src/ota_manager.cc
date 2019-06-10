@@ -255,99 +255,110 @@ namespace iVeiOTA {
 
         return ret;
     }
-
-    void OTAManager::prepareForUpdate(bool noCopy) {
-        // TODO: A better way --
-        //  A config file tells what redundant partition types the system has (from the list in support.hh)
-        //  Keep a map/vector of partitions that we will copy an image into and set flag
-        //  at the end copy over all partitions that don't have the flag set
-        // Need to get to the point of config file processing before that can happen
-      debug << Debug::Mode::Info << "Preparing for update" << std::endl;
-        bool copyBI=true, copyRoot=true, copySystem=true;
-        for(auto chunk: chunks) {
-            if(chunk.type == ChunkType::Image) {
-                if(     chunk.dest == Partition::BootInfo) copyBI     = false;
-                else if(chunk.dest == Partition::Root)     copyRoot   = false;
-                else if(chunk.dest == Partition::System)   copySystem = false;
-            }
-        }
-
-        debug << Debug::Mode::Info << (copyBI     ? "" : "Not ") << "Copying BootInfo" << std::endl;
-        debug << Debug::Mode::Info << (copyRoot   ? "" : "Not ") << "Copying Root"     << std::endl;
-        debug << Debug::Mode::Info << (copySystem ? "" : "Not ") << "Copying System"   << std::endl;
-
-        if(initStatus != 0) {
-          debug << "Canceling" << std::endl;
-            initCancel = true;
-            if(initThread.joinable()) initThread.join();
-        }
-
-        debug << "Creating thread" << std::endl;
-        initStatus = 1;
-        initCancel = false;
-        
-        debug << "At the start of the thread" << std::endl;
-        //TODO: This won't really work as it creates a power-cycle race condition
-        if(copyBI && !noCopy) {
-          debug << "starting to copy BI" << std::endl;
-          std::string src = config.GetDevice(Container::Active, Partition::BootInfo);
-          std::string dest = config.GetDevice(Container::Alternate, Partition::BootInfo);
-          debug << "Copying file " << src << " to " << dest << std::endl;
-          CopyFileData(dest, src, 0, 0);
-        }
-        
-        if(copyRoot && !noCopy) {
-          debug << "starting to copy Root" << std::endl;
-          std::string src = config.GetDevice(Container::Active, Partition::Root);
-          std::string dest = config.GetDevice(Container::Alternate, Partition::Root);
-          CopyFileData(dest, src, 0, 0);
-        }
-        
-        if(copySystem && !noCopy) {
-          debug << "starting to copy System" << std::endl;
-          std::string src = config.GetDevice(Container::Active, Partition::System);
-          std::string dest = config.GetDevice(Container::Alternate, Partition::System);
-          CopyFileData(dest, src, 0, 0);
-        }
-
-        // Then we have to clear the cache
-        {
-          debug << "clearing the cache" << std::endl;
-          std::string cache = config.GetDevice(Container::Alternate, Partition::Cache);
-          if(cache.length() > 1) {
-            // Make sure we have something to try and mount
-            // TODO: Should add more checks here.  This can be very destructure
-            Mount mount(cache, IVEIOTA_MNT_POINT);
-            if(mount.IsMounted()) {
-              RemoveAllFiles(mount.Path() + "/", true);
-            } else {
-              debug << Debug::Mode::Err << "Unable to mount cache partition" << std::endl << Debug::Mode::Info;
-            }
-          }
-        }
-
-        // Then we have to move the fstab file over
-        {
-          std::string dev = config.GetDevice(Container::Alternate, Partition::Root);    
-          Mount mount(dev, IVEIOTA_MNT_POINT);
-          std::string fSrc = mount.Path() + "/fstab.zcu102." + config.GetContainerName(Container::Alternate);
-          std::string fDest = mount.Path() + "/fstab.zcu102";
-          
-          if(!mount.IsMounted()) {
-            debug << Debug::Mode::Err << "Failed to mount: " << dev << " on " << IVEIOTA_MNT_POINT << std::endl << Debug::Mode::Info;
-            return;
-          } else {
-            CopyFileData(fDest, fSrc, 0, 0);
-          }
-        } // unmount
-
-        debug << "Setting validity to false" << std::endl;
-        bootMgr.SetValidity(Container::Alternate, false);
-        
-        initStatus = 2; // Done
-        
-        debug << "Exiting after thread created" << std::endl;
+  
+  void OTAManager::prepareForUpdate(bool noCopy) {
+    // TODO: A better way --
+    //  A config file tells what redundant partition types the system has (from the list in support.hh)
+    //  Keep a map/vector of partitions that we will copy an image into and set flag
+    //  at the end copy over all partitions that don't have the flag set
+    // Need to get to the point of config file processing before that can happen
+    debug << Debug::Mode::Info << "Preparing for update" << std::endl;
+    bool copyBI=true, copyRoot=true, copySystem=true;
+    for(auto chunk: chunks) {
+      if(chunk.type == ChunkType::Image) {
+        if(     chunk.dest == Partition::BootInfo) copyBI     = false;
+        else if(chunk.dest == Partition::Root)     copyRoot   = false;
+        else if(chunk.dest == Partition::System)   copySystem = false;
+      }
     }
+    
+    debug << Debug::Mode::Info << (copyBI     ? "" : "Not ") << "Copying BootInfo" << std::endl;
+    debug << Debug::Mode::Info << (copyRoot   ? "" : "Not ") << "Copying Root"     << std::endl;
+    debug << Debug::Mode::Info << (copySystem ? "" : "Not ") << "Copying System"   << std::endl;
+    
+    initStatus = 1;
+    initCancel = false;
+    
+    debug << "Setting alternate validity to false" << std::endl;
+    bootMgr.SetValidity(Container::Alternate, false);
+    
+    //TODO: This won't really work as it creates a power-cycle race condition
+    if(copyBI && !noCopy) {
+      debug << "starting to copy BI" << std::endl;
+      std::string src = config.GetDevice(Container::Active, Partition::BootInfo);
+      std::string dest = config.GetDevice(Container::Alternate, Partition::BootInfo);
+      debug << "Copying file " << src << " to " << dest << std::endl;
+      std::string command = "dd if=" + src + " of=" + dest + " bs=1m";
+      RunCommand(command);
+      //CopyFileData(dest, src, 0, 0);
+    }
+    
+    if(copyRoot && !noCopy) {
+      debug << "starting to copy Root" << std::endl;
+      std::string src = config.GetDevice(Container::Active, Partition::Root);
+      std::string dest = config.GetDevice(Container::Alternate, Partition::Root);
+      std::string command = "dd if=" + src + " of=" + dest + " bs=1m";
+      RunCommand(command);
+      //CopyFileData(dest, src, 0, 0);
+    }
+    
+    if(copySystem && !noCopy) {
+      debug << "starting to copy System" << std::endl;
+      std::string src = config.GetDevice(Container::Active, Partition::System);
+      std::string dest = config.GetDevice(Container::Alternate, Partition::System);
+      std::string command = "dd if=" + src + " of=" + dest + " bs=1m";
+      RunCommand(command);
+      //CopyFileData(dest, src, 0, 0);
+    }
+    
+    // Then we have to clear the cache
+    {
+      debug << "clearing the cache" << std::endl;
+      std::string cache = config.GetDevice(Container::Alternate, Partition::Cache);
+      std::string command = "mount " + cache + " " + std::string(IVEIOTA_MNT_POINT);
+      RunCommand(command);
+      //if(cache.length() > 1) {
+      //  // Make sure we have something to try and mount
+      //  // TODO: Should add more checks here.  This can be very destructure
+      //  Mount mount(cache, IVEIOTA_MNT_POINT);
+      //  if(mount.IsMounted()) {
+      //    RemoveAllFiles(mount.Path() + "/", true);
+      // TODO: Really need to make sure this always works
+      command = "rm -r -f /" + std::string(IVEIOTA_MNT_POINT) + "/*";
+      RunCommand(command);
+      //  } else {
+      //    debug << Debug::Mode::Err << "Unable to mount cache partition" << std::endl << Debug::Mode::Info;
+      //  }
+      command = "umount " + std::string(IVEIOTA_MNT_POINT);
+      RunCommand(command);
+      //}
+    }
+    
+    // Then we have to move the fstab file over
+    {
+      std::string dev = config.GetDevice(Container::Alternate, Partition::Root);    
+      //Mount mount(dev, IVEIOTA_MNT_POINT);
+      std::string command = "mount " + dev + " " + IVEIOTA_MNT_POINT;
+      RunCommand(command);
+      std::string fSrc = std::string(IVEIOTA_MNT_POINT) + "/fstab.zcu102." + config.GetContainerName(Container::Alternate);
+      std::string fDest = std::string(IVEIOTA_MNT_POINT) + "/fstab.zcu102";
+      
+      //if(!mount.IsMounted()) {
+      //  debug << Debug::Mode::Err << "Failed to mount: " << dev << " on " << IVEIOTA_MNT_POINT << std::endl << Debug::Mode::Info;
+      //  return;
+      //} else {
+      //  CopyFileData(fDest, fSrc, 0, 0);
+      command = "cp " + fSrc + " " + fDest;
+      RunCommand(command);
+      //}
+      command = "umount " + std::string(IVEIOTA_MNT_POINT);
+      RunCommand(command);
+    } // unmount
+    
+    initStatus = 2; // Done
+    
+    debug << "Exiting after thread created" << std::endl;
+  }
   
   bool OTAManager::processChunk(const Message &message, std::vector<std::unique_ptr<Message>> &ret) {
     // first we have to get the identifier out of the payload

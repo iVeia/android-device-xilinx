@@ -53,7 +53,30 @@ namespace iVeiOTA {
     default: return "<<Error>>";
     }
   }
-  
+
+  enum class HashAlgorithm {
+    MD5,
+    SHA1,
+    SHA256,
+    SHA512,
+
+    None,
+
+    Unknown,
+  };
+  HashAlgorithm GetHashAlgorithm(const std::string &name);
+  inline std::string ToString(HashAlgorithm algo) {
+    switch(algo) {
+    case HashAlgorithm::MD5    : return "MD5";
+    case HashAlgorithm::SHA1   : return "SHA1";
+    case HashAlgorithm::SHA256 : return "SHA256";
+    case HashAlgorithm::SHA512 : return "SHA512";
+    case HashAlgorithm::None   : return "None";
+    default: return "<<Error>>";
+    }
+  }
+
+  std::string RunCommand(std::string command);
   uint64_t CopyFileData(const std::string &dest, const std::string &src, 
                         uint64_t offset, uint64_t len);
   int RemoveAllFiles(const std::string &path, bool recursive);
