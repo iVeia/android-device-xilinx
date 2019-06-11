@@ -236,14 +236,6 @@ fi
 echo "========= populating SYSTEMA partition"
 if [ -e ${diskname}${prefix}7 ]; then
 	dd if=/root/system.img of=${diskname}${prefix}7
-	e2label ${diskname}${prefix}7 SYSTEMA
-	e2fsck -f ${diskname}${prefix}7
-    mkdir -p /tmp/sys_part
-    mount -t ext4 ${diskname}${prefix}7 /tmp/sys_part
-    cp -r /root/modules /tmp/sys_part/lib/
-    sync
-    umount /tmp/sys_part
-    rm -rf /tmp/sys_part
 else
 	echo "!!! Error: missing SYSTEM partition ${diskname}${prefix}5";
 	exit 1
@@ -252,14 +244,6 @@ fi
 echo "========= populating SYSTEMB partition"
 if [ -e ${diskname}${prefix}11 ]; then
 	dd if=/root/system.img of=${diskname}${prefix}11
-	e2label ${diskname}${prefix}11 SYSTEMA
-	e2fsck -f ${diskname}${prefix}11
-    mkdir -p /tmp/sys_part
-    mount -t ext4 ${diskname}${prefix}11 /tmp/sys_part
-    cp -r /root/modules /tmp/sys_part/lib/
-    sync
-    umount /tmp/sys_part
-    rm -rf /tmp/sys_part
 else
 	echo "!!! Error: missing SYSTEM partition ${diskname}${prefix}5";
 	exit 1
