@@ -89,6 +89,11 @@ PRODUCT_COPY_FILES +=  \
     device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt \
     device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin \
 
+BRCM_MODULES_DIR=$(ANDROID_PRODUCT_OUT)/obj/KERNEL_OBJ/drivers/net/wireless/broadcom/brcm80211
+PRODUCT_COPY_FILES += \
+    $(BRCM_MODULES_DIR)/brcmfmac/brcmfmac.ko:system/lib/modules/brcmfmac.ko \
+    $(BRCM_MODULES_DIR)/brcmutil/brcmutil.ko:system/lib/modules/brcmutil.ko
+
 # eMMC install script
 PRODUCT_COPY_FILES += \
     device/xilinx/zcu102/scripts/release:release \
