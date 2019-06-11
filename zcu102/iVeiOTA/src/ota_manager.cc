@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <thread>
+#include <unistd.h>
 
 #include "ota_manager.hh"
 #include "config.hh"
@@ -23,6 +24,7 @@ namespace iVeiOTA {
         initStatus = 0;
         maxIdentLength = 0;
         chunks.clear();
+        state = OTAState::Idle;
 
         // Then we need to look and see if there is an upate currently in progress and,
         //  if so, try and restore it
@@ -94,6 +96,7 @@ namespace iVeiOTA {
         switch(message.header.subType) {
             case Message::OTAUpdate.BeginUpdate:
             {
+              state = OTAState::Initing;
               debug << "Got begin update message" << std::endl;
                 if(updateActive) {
                   debug << "update in progress" << std::endl;
@@ -176,6 +179,23 @@ namespace iVeiOTA {
 
             case Message::OTAUpdate.Finalize:
             {
+              // Move the fstab file over
+              {
+                std::string dev = config.GetDevice(Container::Alternate, Partition::Root);    
+                Mount mount(dev, IVEIOTA_MNT_POINT);
+                std::string fSrc = std::string(IVEIOTA_MNT_POINT) + "/fstab.zcu102." + config.GetContainerName(Container::Alternate);
+                std::string fDest = std::string(IVEIOTA_MNT_POINT) + "/fstab.zcu102";
+                
+                if(!mount.IsMounted()) {
+                  debug << Debug::Mode::Err << "Failed to mount: " << dev << " on " << IVEIOTA_MNT_POINT << std::endl << Debug::Mode::Info;
+                  ret.push_back(Message::MakeNACK(message, 0, "Failed to mount alternate system"));
+                  return ret;
+                } else {
+                  std::string command = "cp " + fSrc + " " + fDest;
+                  RunCommand(command);
+                }
+              } // unmount
+              
               // TODO: This mounts/remount 4 times -- need to do better at some point
               int currentRev = bootMgr.GetRev(Container::Active);
               debug << "Setting alternate rev to " << currentRev + 1 << std::endl;
@@ -255,6 +275,57 @@ namespace iVeiOTA {
 
         return ret;
     }
+
+  void OTAManager::initDownloadFunction(bool copyBI, bool copyRoot, bool copySystem) {
+    debug << "Download thread starting" << std::endl;
+    //TODO: This won't really work as it creates a power-cycle race condition
+    if(copyBI) {
+      debug << "starting to copy BI" << std::endl;
+      std::string src = config.GetDevice(Container::Active, Partition::BootInfo);
+      std::string dest = config.GetDevice(Container::Alternate, Partition::BootInfo);
+      debug << "Copying file " << src << " to " << dest << std::endl;
+      CopyFileData(dest, src, 0, 0);
+      
+      sleep(1);
+      debug << "Setting alternate validity to false after copying BI partition" << std::endl;
+      bootMgr.SetValidity(Container::Alternate, false);
+    }
+    
+    if(copyRoot) {
+      debug << "starting to copy Root" << std::endl;
+      std::string src = config.GetDevice(Container::Active, Partition::Root);
+      std::string dest = config.GetDevice(Container::Alternate, Partition::Root);
+      CopyFileData(dest, src, 0, 0);
+    }
+    
+    if(copySystem) {
+      debug << "starting to copy System" << std::endl;
+      std::string src = config.GetDevice(Container::Active, Partition::System);
+      std::string dest = config.GetDevice(Container::Alternate, Partition::System);
+      CopyFileData(dest, src, 0, 0);
+    }
+    
+    // Then we have to clear the cache
+    {
+      debug << "clearing the cache" << std::endl;
+      std::string cache = config.GetDevice(Container::Alternate, Partition::Cache);
+      if(cache.length() > 1) {
+        // Make sure we have something to try and mount
+        // TODO: Should add more checks here.  This can be very destructure
+        Mount mount(cache, IVEIOTA_MNT_POINT);
+        if(mount.IsMounted()) {
+          // TODO: Really need to make sure this always works
+          RemoveAllFiles(mount.Path() + "/", true);
+        } else {
+          debug << Debug::Mode::Err << "Unable to mount cache partition" << std::endl << Debug::Mode::Info;
+        }
+      }// unmount
+    }
+
+    debug << "Thread finished" << std::endl;
+    initStatus = 2; // Done
+    state = OTAState::InitDone;
+  }
   
   void OTAManager::prepareForUpdate(bool noCopy) {
     // TODO: A better way --
@@ -265,7 +336,14 @@ namespace iVeiOTA {
     debug << Debug::Mode::Info << "Preparing for update" << std::endl;
     bool copyBI=true, copyRoot=true, copySystem=true;
     for(auto chunk: chunks) {
+      bool copy = true;
       if(chunk.type == ChunkType::Image) {
+        copy = false;
+      } else if(chunk.type == ChunkType::Archive && chunk.complete == true) {
+        copy = false;
+      }
+
+      if(!copy) {
         if(     chunk.dest == Partition::BootInfo) copyBI     = false;
         else if(chunk.dest == Partition::Root)     copyRoot   = false;
         else if(chunk.dest == Partition::System)   copySystem = false;
@@ -281,81 +359,9 @@ namespace iVeiOTA {
     
     debug << "Setting alternate validity to false" << std::endl;
     bootMgr.SetValidity(Container::Alternate, false);
-    
-    //TODO: This won't really work as it creates a power-cycle race condition
-    if(copyBI && !noCopy) {
-      debug << "starting to copy BI" << std::endl;
-      std::string src = config.GetDevice(Container::Active, Partition::BootInfo);
-      std::string dest = config.GetDevice(Container::Alternate, Partition::BootInfo);
-      debug << "Copying file " << src << " to " << dest << std::endl;
-      std::string command = "dd if=" + src + " of=" + dest + " bs=1m";
-      RunCommand(command);
-      //CopyFileData(dest, src, 0, 0);
-    }
-    
-    if(copyRoot && !noCopy) {
-      debug << "starting to copy Root" << std::endl;
-      std::string src = config.GetDevice(Container::Active, Partition::Root);
-      std::string dest = config.GetDevice(Container::Alternate, Partition::Root);
-      std::string command = "dd if=" + src + " of=" + dest + " bs=1m";
-      RunCommand(command);
-      //CopyFileData(dest, src, 0, 0);
-    }
-    
-    if(copySystem && !noCopy) {
-      debug << "starting to copy System" << std::endl;
-      std::string src = config.GetDevice(Container::Active, Partition::System);
-      std::string dest = config.GetDevice(Container::Alternate, Partition::System);
-      std::string command = "dd if=" + src + " of=" + dest + " bs=1m";
-      RunCommand(command);
-      //CopyFileData(dest, src, 0, 0);
-    }
-    
-    // Then we have to clear the cache
-    {
-      debug << "clearing the cache" << std::endl;
-      std::string cache = config.GetDevice(Container::Alternate, Partition::Cache);
-      std::string command = "mount " + cache + " " + std::string(IVEIOTA_MNT_POINT);
-      RunCommand(command);
-      //if(cache.length() > 1) {
-      //  // Make sure we have something to try and mount
-      //  // TODO: Should add more checks here.  This can be very destructure
-      //  Mount mount(cache, IVEIOTA_MNT_POINT);
-      //  if(mount.IsMounted()) {
-      //    RemoveAllFiles(mount.Path() + "/", true);
-      // TODO: Really need to make sure this always works
-      command = "rm -r -f /" + std::string(IVEIOTA_MNT_POINT) + "/*";
-      RunCommand(command);
-      //  } else {
-      //    debug << Debug::Mode::Err << "Unable to mount cache partition" << std::endl << Debug::Mode::Info;
-      //  }
-      command = "umount " + std::string(IVEIOTA_MNT_POINT);
-      RunCommand(command);
-      //}
-    }
-    
-    // Then we have to move the fstab file over
-    {
-      std::string dev = config.GetDevice(Container::Alternate, Partition::Root);    
-      //Mount mount(dev, IVEIOTA_MNT_POINT);
-      std::string command = "mount " + dev + " " + IVEIOTA_MNT_POINT;
-      RunCommand(command);
-      std::string fSrc = std::string(IVEIOTA_MNT_POINT) + "/fstab.zcu102." + config.GetContainerName(Container::Alternate);
-      std::string fDest = std::string(IVEIOTA_MNT_POINT) + "/fstab.zcu102";
-      
-      //if(!mount.IsMounted()) {
-      //  debug << Debug::Mode::Err << "Failed to mount: " << dev << " on " << IVEIOTA_MNT_POINT << std::endl << Debug::Mode::Info;
-      //  return;
-      //} else {
-      //  CopyFileData(fDest, fSrc, 0, 0);
-      command = "cp " + fSrc + " " + fDest;
-      RunCommand(command);
-      //}
-      command = "umount " + std::string(IVEIOTA_MNT_POINT);
-      RunCommand(command);
-    } // unmount
-    
-    initStatus = 2; // Done
+
+    //std::thread copyThread([=]{this->initDownloadFunction(copyBI && !noCopy, copyRoot && !noCopy, copySystem && !noCopy);});
+    initDownloadFunction(copyBI && !noCopy, copyRoot && !noCopy, copySystem && !noCopy);
     
     debug << "Exiting after thread created" << std::endl;
   }
@@ -370,7 +376,6 @@ namespace iVeiOTA {
         break;
       }
       ident += (char)message.payload[identEnd];
-      debug << "*" << ident << std::endl;
     }
     
     debug << "Chunk ident: " << ident << "  " << identEnd << std::endl;
@@ -425,126 +430,179 @@ namespace iVeiOTA {
   }
   
   bool OTAManager::processChunkFile(const ChunkInfo &chunk, const std::string &path) {
-        //TODO: Need to check the hash
-        bool success = false;
-        switch(chunk.type) {
-            case ChunkType::Image:
-            {
-              std::string dest = config.GetDevice(Container::Alternate, chunk.dest);
-                uint64_t offset = chunk.pOffset;
-                uint64_t size = chunk.size;
-                uint64_t written = CopyFileData(dest, path, offset, size);
-                if(written != size) return false;
-            }
-            break;
-
-            case ChunkType::Script:
-            success = false;
-            break;
-
-            case ChunkType::File:
-            success = false;
-            break;
-
-            case ChunkType::Dummy:
-              debug << "Processing dummy chunk" << std::endl;
-              success = true;
-            break;
-
-            default:
-            success = false;
-            break;
-        }
-        return success;
+    bool success = false;
+    
+    //First we need t check the hash
+    {
+      std::string hashValue = GetHashValue(chunk.hashType, path);
+      if(hashValue != chunk.hashValue) {
+        debug << "Hashed values differed: " << hashValue << "::" << chunk.hashValue << std::endl;
+        return false;
+      }
     }
-
-    bool OTAManager::processManifest(const std::string &manifest, std::vector<std::unique_ptr<Message>> &ret) {
-        // The manifest is a list of chunks in the format
-        // ident:type:partition:order:params_list:hash
-        // ident is a string identifier
-        // type is the type of chunk
-        //      image, file, script
-        // partition is the destination of the chunk/file
-        //      root, system, boot_info, boot, data, qspi
-        // order is 0/false or 1/true indicating if this chunk has
-        //   has to be processed in the order it appears in the manifest
-        //   All order=true chunks must appear at the start of the manifest
-        // params_list depends on the chunk type
-        //  For images:
-        //   pOffset:fOffset:num_bytes
-        //   pOffset is the offset in the physical device to transfer chunk data
-        //   fOffset is the file offset of the image file that this chunk contains (not needed?)
-        //   num_bytes are how many bytes in this chunk (starting at zero) to copy to the device
-        //  For files:
-        //   dest_path
-        //   dest_path is the location the file should be placed at (including path and name)
-        //  For dummy:
-        //   dest_path - a file to (possibly) test for hash calculations.  If it doesn't exist
-        //               this isn't a problem.  It will be ignored.
-      debug << Debug::Mode::Info << "Processing manifest" << std::endl;
-        std::vector<std::string> lines = Split(manifest, "\r\n");
-        for(std::string line : lines) {
-            std::vector<std::string> toks = Split(line, ":");
-            if(toks.size() < 5) {
-              debug << Debug::Mode::Info << "  > " << line << std::endl;
-                // This isn't a valid chunk
-                continue;
-            }
-            ChunkInfo chunk;
-            chunk.processed = false;
-
-            chunk.ident = toks[0];
-            chunk.type = GetChunkType(toks[1]);
-            chunk.dest  = GetPartition(toks[2]);
-
-            // Sanity check the type and destination
-            if(chunk.type == ChunkType::Unknown || chunk.dest == Partition::Unknown) continue;
-            if((chunk.type == ChunkType::Image && toks.size() < 8) ||
-               (chunk.type == ChunkType::File && toks.size() < 6)) continue;
-
-            chunk.orderMatters = (toks[3][0] == '1' || toks[3] == "true" || toks[3] == "True" || toks[3] == "TRUE") ? true : false;
-            chunk.hash = toks[toks.size() - 1];
-
-            // Then get the chunk specific stuff
-            switch(chunk.type) {
-                case ChunkType::Image:
-                chunk.pOffset = strtoll(toks[4].c_str(), 0, 10);
-                chunk.fOffset = strtoll(toks[5].c_str(), 0, 10);
-                chunk.size    = strtoll(toks[6].c_str(), 0, 10);
-                break;
-
-                case ChunkType::Dummy:
-                chunk.dest = Partition::None;
-                // fall through to set filepath
-                case ChunkType::File:
-                chunk.filePath = toks[4];
-                break;
-
-                case ChunkType::Script:
-                // TODO: Add a generic response message for non-failure info cases
-                continue; // not handled yet
-
-                default:
-                // TODO: Add a generic response message for non-failure info cases
-                continue;
-            }
-
-            // If we made it here, then we have a valid chunk
-            if(chunk.ident.length() > maxIdentLength) maxIdentLength = chunk.ident.length();
-
-            debug << Debug::Mode::Info << "Found chunk: " << chunk.ident << ":" << std::endl;
-            chunks.push_back(chunk);
-        }
-
-        // This seem to be a valid manifest, so we should save it to the cache
-        try {
-            std::ofstream manifest_cache(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
-            manifest_cache << manifest;
-        } catch(...) {
-          debug << Debug::Mode::Err << "Failed to cache manifest" << std::endl << Debug::Mode::Info;
-            // Can't write to the cache, so we can't resume this download
-            // TODO: Add a generic response message for non-failure info cases
-        }
-        return true;
+    switch(chunk.type) {
+    case ChunkType::Image:
+    {      
+      std::string dest = config.GetDevice(Container::Alternate, chunk.dest);
+      uint64_t offset = chunk.pOffset;
+      uint64_t size = chunk.size;
+      debug << "Writing image " << path << " to " << dest << " offset: " << offset << " size: " << size << std::endl;
+      uint64_t written = CopyFileData(dest, path, offset, size);
+      if(written != size) {
+        debug << "Didn't write proper amount: " << written << ":" << size << std::endl;
+        return false;        
+      }
     }
+    break;
+
+    case ChunkType::Archive:
+      {
+        std::string dest = config.GetDevice(Container::Alternate, chunk.dest);
+        Mount mount(dest, IVEIOTA_MNT_POINT);
+        if(!mount.IsMounted()) {
+          debug << "Failed to mount device" << std::endl;
+          success = false;
+          break;
+        }
+        
+        if(chunk.complete) {
+          // We have to clear out the old files first
+          debug << "Clearing out old files for complete archive on " << dest << std::endl;
+          RemoveAllFiles(mount.Path() + "/", true);
+        }
+
+        // Then we have to untar it
+        // TODO: Check the output of tar for success/failure
+        std::string command = "tar -x -f " + path + " -C " + mount.Path() + "/";
+        std::string output = RunCommand(command);
+      } // unmount
+      success = true;
+      break;
+    
+    case ChunkType::Script:
+      success = false;
+      break;
+      
+    case ChunkType::File:
+      success = false;
+      break;
+      
+    case ChunkType::Dummy:
+      debug << "Processing dummy chunk" << std::endl;
+      success = true;
+      break;
+      
+    default:
+      success = false;
+      break;
+    }
+    return success;
+  }
+  
+  bool OTAManager::processManifest(const std::string &manifest, std::vector<std::unique_ptr<Message>> &ret) {
+    // The manifest is a list of chunks in the format
+    // ident:type:partition:order:<params_list>:hash_type:hash_value
+    // ident is a string identifier
+    // type is the type of chunk
+    //      image, file, script
+    // partition is the destination of the chunk/file
+    //      root, system, boot_info, boot, data, qspi
+    // order is 0/false or 1/true indicating if this chunk has
+    //   has to be processed in the order it appears in the manifest
+    //   All order=true chunks must appear at the start of the manifest
+    // params_list depends on the chunk type
+    //  For images:
+    //   pOffset:fOffset:num_bytes
+    //   pOffset is the offset in the physical device to transfer chunk data
+    //   fOffset is the file offset of the image file that this chunk contains (not needed?)
+    //   num_bytes are how many bytes in this chunk (starting at zero) to copy to the device
+    //  For Archives:
+    //   complete
+    //   complete is whether this image will completely overwrite the destination
+    //  For files:
+    //   dest_path
+    //   dest_path is the location the file should be placed at (including path and name)
+    //  For dummy:
+    //   dest_path - a file to (possibly) test for hash calculations.  If it doesn't exist
+    //               this isn't a problem.  It will be ignored.
+    // hash_type is the type of the hash value
+    // hash_value is the value of the hash for integrity checking
+    debug << Debug::Mode::Info << "Processing manifest" << std::endl;
+    std::vector<std::string> lines = Split(manifest, "\r\n");
+    for(std::string line : lines) {
+      std::vector<std::string> toks = Split(line, ":");
+      if(toks.size() < 6) {
+        debug << Debug::Mode::Info << "  > " << line << std::endl;
+        // This isn't a valid chunk
+        continue;
+      }
+      ChunkInfo chunk;
+      chunk.processed = false;
+      
+      chunk.ident = toks[0];
+      chunk.type = GetChunkType(toks[1]);
+      chunk.dest  = GetPartition(toks[2]);
+      
+      // Sanity check the type and destination
+      if(chunk.type == ChunkType::Unknown || chunk.dest == Partition::Unknown) continue;
+      if((chunk.type == ChunkType::Image && toks.size() < 9) ||
+         (chunk.type == ChunkType::File && toks.size() < 7)) continue;
+
+      // Check to see if we have a specific order we have to process this chunk in
+      // TODO: proper handling of this needs to be implemented
+      chunk.orderMatters = (toks[3][0] == '1' || toks[3] == "true" || toks[3] == "True" || toks[3] == "TRUE") ? true : false;
+      
+      // Get the hash information
+      chunk.hashType = GetHashAlgorithm(toks[toks.size() - 2]);
+      chunk.hashValue = toks[toks.size() - 1];
+      // Sanity check it
+      if(chunk.hashType == HashAlgorithm::Unknown || 
+         (chunk.hashType == HashAlgorithm::None && chunk.type != ChunkType::Dummy)) continue;
+      
+      // Then get the chunk specific stuff
+      switch(chunk.type) {
+      case ChunkType::Image:
+        chunk.pOffset = strtoll(toks[4].c_str(), 0, 10);
+        chunk.fOffset = strtoll(toks[5].c_str(), 0, 10);
+        chunk.size    = strtoll(toks[6].c_str(), 0, 10);
+        break;
+
+      case ChunkType::Archive:
+        chunk.complete = toks[4][0] == '1';
+        break;
+        
+      case ChunkType::Dummy:
+        chunk.dest = Partition::None;
+        // fall through to set filepath
+      case ChunkType::File:
+        chunk.filePath = toks[4];
+        break;
+        
+      case ChunkType::Script:
+        // TODO: Add a generic response message for non-failure info cases
+        continue; // not handled yet
+        
+      default:
+        // TODO: Add a generic response message for non-failure info cases
+        continue;
+      }
+      
+      // If we made it here, then we have a valid chunk
+      if(chunk.ident.length() > maxIdentLength) maxIdentLength = chunk.ident.length();
+      
+      debug << Debug::Mode::Info << "Found chunk: " << chunk.ident << ":" << ToString(chunk.dest) << std::endl;
+      chunks.push_back(chunk);
+    } // end for(line : lines)
+    
+    // This seem to be a valid manifest, so we should save it to the cache
+    try {
+      std::ofstream manifest_cache(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
+      manifest_cache << manifest;
+    } catch(...) {
+      debug << Debug::Mode::Err << "Failed to cache manifest" << std::endl << Debug::Mode::Info;
+      // Can't write to the cache, so we can't resume this download
+      // TODO: Add a generic response message for non-failure info cases
+    }
+    return true;
+  }
 };

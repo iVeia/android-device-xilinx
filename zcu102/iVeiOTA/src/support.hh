@@ -75,7 +75,8 @@ namespace iVeiOTA {
     default: return "<<Error>>";
     }
   }
-
+  std::string GetHashValue(HashAlgorithm hashType, const std::string &filePath);
+  
   std::string RunCommand(std::string command);
   uint64_t CopyFileData(const std::string &dest, const std::string &src, 
                         uint64_t offset, uint64_t len);

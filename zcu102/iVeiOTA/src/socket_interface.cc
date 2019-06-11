@@ -124,7 +124,6 @@ namespace iVeiOTA {
             switch(state) {
             case messageState::WaitingSync:
             {
-              debug << "SyncAt: " << syncAt << std::endl;
                 if(Message::sync[syncAt] == data[processed]) syncAt++;
                 else syncAt = 0;
                 processed++;
@@ -199,7 +198,12 @@ namespace iVeiOTA {
         // Sanity check
         if(buf == nullptr || len <= 0) return false;
 
-        // WRite the header data to the socket.  buf is a unique_ptr
+        // If the other side has closed the socket on us these writes will
+        //  generate a SIGPIPE - broken pipe signal.
+        // The server handles that and will call CloseConnection so we don't
+        //  do anything about that here
+        
+        // Write the header data to the socket.  buf is a unique_ptr
         int wrote = write(clientSocket, buf.get(), len);
 
         // Then we have to write the payload data
@@ -235,4 +239,11 @@ namespace iVeiOTA {
     bool SocketInterface::ClientConnected() const {
         return clientSocket >= 0;
     }
+
+  void SocketInterface::CloseConnection() {
+    if(clientSocket >= 0) {
+      close(clientSocket);
+      clientSocket = -1;
+    }
+  }
 };

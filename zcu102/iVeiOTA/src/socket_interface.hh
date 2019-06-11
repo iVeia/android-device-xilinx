@@ -40,6 +40,7 @@ class SocketInterface {
   bool Listening() const;
   
   bool ClientConnected() const;
+  void CloseConnection();
   
 protected:
   bool               server;          // Is this instance a server

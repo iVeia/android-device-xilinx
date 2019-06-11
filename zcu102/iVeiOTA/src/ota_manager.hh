@@ -13,68 +13,81 @@
 #include "uboot.hh"
 
 namespace iVeiOTA {
-struct OTAStatus {
-
-};
-
-class OTAManager {
- protected:
+  struct OTAStatus {
+    
+  };
+  
+  class OTAManager {
+  protected:
     enum class ChunkType {
-        Image,
-        File,
-        Script,
-        Dummy,
-
-        Unknown,
+      Image,
+      Archive,
+      File,
+      Script,
+      Dummy,
+      
+      Unknown,
     };    
-  static ChunkType GetChunkType(const std::string &name);
+    static ChunkType GetChunkType(const std::string &name);
 
+    enum class OTAState {
+      Idle,
+      Initing,
+      InitDone,
+    };
+    OTAState state;
+    
     struct ChunkInfo {
-        std::string ident;    // Identifier for the chunk
-        std::string hash;     // MD5 hash for the chunk
+      std::string ident;       // Identifier for the chunk
+      
+      HashAlgorithm hashType;  // How to calculate the hash value
+      std::string hashValue;   // MD5 hash for the chunk
+      
+      ChunkType type;          // Type of this chunk for processing
+      Partition dest;          // Which partition this goes chunk goes into
+      
+      bool orderMatters;       //
+      
+      // TODO: maybe make this a union?
+      uint64_t pOffset;        // Physical offset (on the device) for Image chunks
+      uint64_t fOffset;        // File offset for Image chunks
+      uint64_t size;           // How many bytes in the image to write
 
-        ChunkType type;       // Type of this chunk for processing
-        Partition dest;       // Which partition this goes chunk goes into
-
-        bool orderMatters;    //
-
-        // TODO: maybe make this a union?
-        uint64_t pOffset;     // Physical offset (on the device) for Image chunks
-        uint64_t fOffset;     // File offset for Image chunks
-        uint64_t size;        // How many bytes in the image to write
-
-        std::string filePath; // Destination path for file chunks
-
-        bool processed;
-        bool succeeded;
+      bool complete;
+      
+      std::string filePath;    // Destination path for file chunks
+      
+      bool processed;
+      bool succeeded;
     };
     
     int         initStatus;
     bool        initCancel;
-
+    
     bool processingChunk;
     std::string whichChunk;
-
+    
     bool updateActive;
     bool updateAvailable;
     std::vector<ChunkInfo> chunks;
     unsigned int maxIdentLength;
-
-
-    public:
-
-  explicit OTAManager(UBootManager &bootMgr, std::string configFile = IVEIOTA_DEFAULT_CONFIG);
-  std::vector<std::unique_ptr<Message>> ProcessCommand(const Message &message);
-  
-    protected:
-  UBootManager &bootMgr;
-  std::vector<std::unique_ptr<Message>> processActionMessage(const Message &message);
-  std::vector<std::unique_ptr<Message>> processStatusMessage(const Message &message);
-  void prepareForUpdate(bool noCopy = false);
-  bool processChunk(const Message &message, std::vector<std::unique_ptr<Message>> &ret);
-  bool processChunkFile(const ChunkInfo &chunk, const std::string &path);
-  bool processManifest(const std::string &manifest, std::vector<std::unique_ptr<Message>> &ret);
-};
+    
+    
+  public:
+    
+    explicit OTAManager(UBootManager &bootMgr, std::string configFile = IVEIOTA_DEFAULT_CONFIG);
+    std::vector<std::unique_ptr<Message>> ProcessCommand(const Message &message);
+    
+  protected:
+    UBootManager &bootMgr;
+    std::vector<std::unique_ptr<Message>> processActionMessage(const Message &message);
+    std::vector<std::unique_ptr<Message>> processStatusMessage(const Message &message);
+    void prepareForUpdate(bool noCopy = false);
+    bool processChunk(const Message &message, std::vector<std::unique_ptr<Message>> &ret);
+    bool processChunkFile(const ChunkInfo &chunk, const std::string &path);
+    bool processManifest(const std::string &manifest, std::vector<std::unique_ptr<Message>> &ret);
+    void initDownloadFunction(bool copyBI, bool copyRoot, bool copySystem);
+  };
 };
 
 #endif

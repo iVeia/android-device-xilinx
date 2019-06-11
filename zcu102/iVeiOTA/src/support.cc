@@ -11,6 +11,7 @@
 
 #include "support.hh"
 #include "debug.hh"
+#include "config.hh"
 
 namespace iVeiOTA {
   Partition GetPartition(const std::string &name) {
@@ -37,14 +38,37 @@ namespace iVeiOTA {
 
     else                 return HashAlgorithm::Unknown;
   }
+  
+  std::string GetHashValue(HashAlgorithm hashType, const std::string &filePath) {
+    if(hashType == HashAlgorithm::None || hashType == HashAlgorithm::Unknown) return "";
+    
+    // First we have to get the command to run
+    std::string prog = config.GetHashAlgorithmProgram(hashType);
+    std::string ret  = RunCommand(prog + " " + filePath);
+    if(ret.find("No such file") != std::string::npos) {
+      debug << "File did not exist to run hash program on" << std::endl;
+      // Command returned an error
+      return "";
+    }
+
+    // TODO: Figure out how many tokens the return splits into
+    //  double spaces should be collapsed, but need to make sure
+    std::vector<std::string> toks = Split(ret, " \t");
+    if(toks.size() >= 2 && toks.size() < 4) return toks[0];
+    else return "";    
+  }
     
   std::string RunCommand(std::string command) {
+    // Where to keep the response from the program we are running
     std::array<char, 256> buffer;
     std::string result;
     debug << "Running command: " << command << std::endl;
+
+    // Run the program and open a pipe to it to get the output
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);    
     if (!pipe) {
       debug << Debug::Mode::Err << "Failed to open pipe to run command " << command << std::endl << Debug::Mode::Info;
+      return "";
     }
     while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
       result += buffer.data();
@@ -54,12 +78,13 @@ namespace iVeiOTA {
   }
   
   bool dirExists(std::string dir_path) {
-    struct stat sb;
+    struct stat ss;
     
-    if (stat(dir_path.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode))
+    if (stat(dir_path.c_str(), &ss) == 0 && S_ISDIR(ss.st_mode)) {
       return true;
-    else
+    } else {
       return false;
+    }
   }
 
   int RemoveAllFiles(const std::string &path, bool recursive) {

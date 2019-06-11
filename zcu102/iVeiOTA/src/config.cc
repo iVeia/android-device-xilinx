@@ -51,10 +51,12 @@ namespace iVeiOTA {
       debug << Debug::Mode::Failure << "Failed to parse command line" << std::endl << Debug::Mode::Info;
     }
 
+    // TODO: We can't do a download with no current - need to have a flag that says that
     if(active.length() == 0 || active == "None") {
       debug << Debug::Mode::Failure << "Did not find active identifier! OTA will likely not work" << std::endl << Debug::Mode::Info;
     }
 
+    // TODO: We can still download with no alternate - need to implement that
     if(alternate.length() == 0 || alternate == "None") {
       debug << Debug::Mode::Failure << "Did not find alternate identifier! OTA will likely not work" << std::endl << Debug::Mode::Info;
     }
@@ -102,6 +104,7 @@ namespace iVeiOTA {
             }
           } // end if(toks[0] == "partition"
 
+          // hash_prog:type:path_to_executable
           else if(toks[0] == "hash_prog") {
             if(toks.size() < 3) continue; // Invalid
             std::string name = toks[1];
@@ -124,6 +127,14 @@ namespace iVeiOTA {
     }
   }
 
+  std::string GlobalConfig::GetHashAlgorithmProgram(HashAlgorithm algo) {
+    if(hashAlgorithms.find(algo) != hashAlgorithms.end()) {
+      return hashAlgorithms[algo];
+    } else {
+      return "";
+    }
+  }
+
   std::string GlobalConfig::GetContainerName(Container container) {
     if(container == Container::Active) return active;
     else if(container == Container::Alternate) return alternate;
@@ -131,10 +142,6 @@ namespace iVeiOTA {
   }
 
   std::string GlobalConfig::GetDevice(Container container, Partition part) {
-    //for(auto _info : partitions) {
-    //  debug << Debug::Mode::Debug << "   *** " << ToString(_info.container) << ":" << ToString(_info.partition) << std::endl;
-    //  if(_info.container == container && _info.partition == part) return _info.device;
-    //}
     if(partitions.find(container) != partitions.end() &&
        partitions[container].find(part) != partitions[container].end()) {
       return partitions[container][part];

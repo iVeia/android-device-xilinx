@@ -18,12 +18,18 @@ using namespace iVeiOTA;
 
 // Not thread safe
 static volatile bool exiting = false;
+static volatile bool brokenPipe = false;
 void signalHandler(int sig) {
   switch(sig) {
-    case SIGINT:
-      std::cout << "sigint received: exiting" << std::endl;
-      exiting = true;
-      break;      
+  case SIGINT:
+    std::cout << "sigint received: exiting" << std::endl;
+    exiting = true;
+    break;
+    
+  case SIGPIPE:
+    std::cout << "sigpipe received: doing nothing" << std::endl;
+    brokenPipe = true;
+    break;
   }
 }
 
@@ -33,6 +39,7 @@ int main(int argc, char ** argv) {
   debug << Debug::Mode::Info << "Starting server" << std::endl;
   // Register a signal handler so that we can exit gracefully when ctrl-c is pressed
   signal (SIGINT, signalHandler);
+  signal (SIGPIPE, signalHandler);
 
   // For development convenience, fake things that don't exist on a dev system
   bool simulate = false;
@@ -93,6 +100,11 @@ int main(int argc, char ** argv) {
     if(exiting && !done) {
       server.Stop();
       done = true;
+    }
+
+    if(brokenPipe) {
+      server.CloseConnection();
+      brokenPipe = false;
     }
     
     // Process any data we need to from the server
