@@ -4,8 +4,12 @@ on init
     # mount debugfs
     mount debugfs /sys/kernel/debug /sys/kernel/debug mode=755
 
-on fs
-    mount_all /fstab.zcu102
+on fs && property:ro.boot.container=a
+    mount_all /fstab.zcu102.a
+    setprop ro.crypto.fuse_sdcard false
+
+on fs && property:ro.boot.container=b
+    mount_all /fstab.zcu102.b
     setprop ro.crypto.fuse_sdcard false
 
 on post-fs-data

@@ -13,13 +13,13 @@ namespace iVeiOTA {
     readContainerInfo(Container::Active);
     readContainerInfo(Container::Alternate);
 
-    debug << Debug::Mode::Info <<
+    debug <<
       "Active container info -- " << std::endl << 
       " \tTries: "   << containerInfo[Container::Active].tries <<
       " \tRev: "     << containerInfo[Container::Active].rev <<
       " \tValid: "   << containerInfo[Container::Active].valid <<
       " \tUpdated: " << containerInfo[Container::Active].updated << std::endl;
-    debug << Debug::Mode::Info <<
+    debug <<
       "Alternate container info -- " << std::endl << 
       " \tTries: "   << containerInfo[Container::Alternate].tries <<
       " \tRev: "     << containerInfo[Container::Alternate].rev <<
@@ -45,14 +45,13 @@ namespace iVeiOTA {
         ret.push_back(Message::MakeNACK(message));
       }
       break;
-      break;
       
     case Message::BootManagement.SwitchContainer:
     {
       auto curr = containerInfo.find(Container::Active);
       auto alt  = containerInfo.find(Container::Alternate);
       if(curr == containerInfo.end() || alt == containerInfo.end()) {
-        ret.push_back(Message::MakeNACK(message, 0, "Internal error"));
+        ret.push_back(Message::MakeNACK(message, 0, "Cannot find active and alternate containers"));
       } else {
         alt->second.rev = curr->second.rev + 1;
         if(writeContainerInfo(Container::Alternate)) {

@@ -53,11 +53,13 @@ namespace iVeiOTA {
 
     // TODO: We can't do a download with no current - need to have a flag that says that
     if(active.length() == 0 || active == "None") {
+      active = "";
       debug << Debug::Mode::Failure << "Did not find active identifier! OTA will likely not work" << std::endl << Debug::Mode::Info;
     }
 
     // TODO: We can still download with no alternate - need to implement that
     if(alternate.length() == 0 || alternate == "None") {
+      alternate = "";
       debug << Debug::Mode::Failure << "Did not find alternate identifier! OTA will likely not work" << std::endl << Debug::Mode::Info;
     }
 
@@ -124,6 +126,15 @@ namespace iVeiOTA {
       
     } catch(...) {
       debug << Debug::Mode::Failure << "Failed to read config file" << std::endl << Debug::Mode::Info;
+    }
+  }
+
+  bool GlobalConfig::Valid() const {
+    if(active.length() > 0 && active != "None" &&
+       alternate.length() > 0 && alternate != "None") {
+      return true;
+    } else {
+      return false;
     }
   }
 

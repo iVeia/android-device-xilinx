@@ -17,6 +17,8 @@ namespace iVeiOTA {
     std::string GetDevice(Container container, Partition part);
     std::string GetContainerName(Container container);
     std::string GetHashAlgorithmProgram(HashAlgorithm algo);
+
+    bool Valid() const;
   protected:
     //struct partition_info {
     //  Container container;

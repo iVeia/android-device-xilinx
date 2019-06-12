@@ -53,40 +53,46 @@ int main(int argc, char ** argv) {
   // Create an interface to the uboot env processing
   UBootManager uboot;
   OTAManager   manager(uboot);
+  bool initialized = false;
 
   // Create our listening socket
-  SocketInterface server([&uboot, &manager, &server](const Message &message) {
+  SocketInterface server([&uboot, &manager, &server, &initialized](const Message &message) {
     std::cout << "Message received: " << message.header.toString() << std::endl;
     std::vector<std::unique_ptr<Message>> resp;
     debug << "Got a message " << std::endl;
-    switch(message.header.type) {
-      case static_cast<uint32_t>(Message::Management):
-        switch(message.header.subType) {
-          case Message::Management.Initialize:
-            // We don't really have anything to do here at the moment as the system inits itself
-            //  on startup at the moment
-            resp.push_back(Message::MakeACK(message));
-          break;
-          default: break;
-        }
-        break;
-
+    if(message.header.type == Message::Management &&
+       message.header.subType == Message::Management.Initialize) {
+      // INitialize here if needed
+      initialized = true;
+      resp.push_back(Message::MakeACK(message));
+    } else if(!initialized) {
+      resp.push_back(Message::MakeNACK(message, 0, "Not yet initialized"));
+    } else if(!config.Valid()) {
+      resp.push_back(Message::MakeNACK(message, 0, "System not OTA capable"));
+    } else {
+      switch(message.header.type) {
       case Message::OTAUpdate:
       case Message::OTAStatus:
         debug << "Processing OTAManager message" << std::endl;
         resp = manager.ProcessCommand(message);
         break;
-
+        
       case Message::BootManagement:
         debug << "Processing Boot message" << std::endl;
         resp = uboot.ProcessCommand(message);
         break;
-
+        
       default:
         break;
-    } // end switch
-
+      } // end switch
+    } // end if(!initialized)
+    
     debug << "Sending " << resp.size() << " messages" << std::endl;
+    if(resp.size() < 1) {
+      // We got a message but don't have a response for it
+      debug << "No response to " << (int)message.header.type << ":" << (int)message.header.subType << std::endl;
+      resp.push_back(Message::MakeNACK(message, 0, "No response to this message"));
+    }
     for(unsigned int i = 0; i < resp.size(); i++) {
       server.Send(*resp[i]);
     }

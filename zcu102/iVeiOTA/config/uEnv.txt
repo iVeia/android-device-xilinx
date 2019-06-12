@@ -27,7 +27,7 @@ defabargs=setenv abbootargs console=${iv_tty},115200n8 iv_mb=${iv_mb} iv_io=${iv
 fdtcommand=echo "fdtcommand"; fdt addr $fdt_addr && fdt ivclean mb $iv_mb_ord && fdt ivclean bp $iv_bp_ord && fdt ivclean io $iv_io_ord && echo "done" 
 
 # iVeia Boot process
-setup=setenv fdt_file iveia-helios-z8.dtb;setenv iv_mmc 1; mmc dev 0;if fatload mmc 0 ${fdt_addr} ${fdt_file}; then setenv iv_mmc 0; fi; mmc dev 1; setenv sdbootdev ${iv_mmc}; setenv iv_tty ttyPS0; 
+setup=setenv iv_io_ord 00125; setenv iv_io 205-00125-01-A1,UNDEF,Bone_Island; setenv fdt_file iveia-helios-z8.dtb;setenv iv_mmc 1; mmc dev 0;if fatload mmc 0 ${fdt_addr} ${fdt_file}; then setenv iv_mmc 0; fi; mmc dev 1; setenv sdbootdev ${iv_mmc}; setenv iv_tty ttyPS0; 
 memadj=echo "mem adjust"; mw ff180080 40; mw ff180084 40; mw ff0a0244 00002003; mw ff0a0248 00002003; mw ff0a0008 20032003; mw ff0a0044 00002003;
 fpga_setup=run rst_fpga_active; fatload mmc $sdbootdev ${xloadaddr} ${xloadfile}; fpga loadb 0 ${xloadaddr} ${filesize}; run rst_fpga_inactive
 defargs=run setup; run memadj; run fpga_setup; setenv modeboot runABscript

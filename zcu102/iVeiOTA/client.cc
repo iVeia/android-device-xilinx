@@ -136,7 +136,7 @@ int main(int argc, char ** argv) {
         cout << "\t" << message.header.imm[0] << ":" << message.header.imm[1] << ":" << message.header.imm[2] << message.header.imm[3] << endl;
         cout << "\t" << message.header.pLen << endl;
         for(unsigned int i = 0; i < message.payload.size(); i++) {
-          printf(" .%02X. ", message.payload[i]);
+          printf(" .%c.%02X. ", (char)message.payload[i], message.payload[i]);
           if((i % 32) == 0) printf(" -- \n");
         }
         if(message.payload.size() > 0) cout << endl;

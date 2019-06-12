@@ -18,6 +18,7 @@ namespace iVeiOTA {
     if(name == "root")           return Partition::Root;
     else if(name == "system")    return Partition::System;
     else if(name == "boot_info") return Partition::BootInfo;
+    else if(name == "bi")        return Partition::BootInfo;
     else if(name == "boot")      return Partition::Boot;
     else if(name == "qspi")      return Partition::QSPI;
     else if(name == "data")      return Partition::Data;
@@ -65,7 +66,8 @@ namespace iVeiOTA {
     debug << "Running command: " << command << std::endl;
 
     // Run the program and open a pipe to it to get the output
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);    
+    debug << "Command string is " << command.c_str() << std::endl;
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
     if (!pipe) {
       debug << Debug::Mode::Err << "Failed to open pipe to run command " << command << std::endl << Debug::Mode::Info;
       return "";
