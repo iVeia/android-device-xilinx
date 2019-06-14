@@ -78,8 +78,6 @@ namespace iVeiOTA {
   std::string GetHashValue(HashAlgorithm hashType, const std::string &filePath);
   
   std::string RunCommand(std::string command);
-  uint64_t CopyFileData(const std::string &dest, const std::string &src, 
-                        uint64_t offset, uint64_t len);
   int RemoveAllFiles(const std::string &path, bool recursive);
   
   //TODO: Consider replacing these with returns of unique_ptr if copying becomes too much

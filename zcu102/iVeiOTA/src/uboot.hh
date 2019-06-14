@@ -27,6 +27,7 @@ namespace iVeiOTA {
     void SetRev(Container container, int rev);
 
     int GetRev(Container container);
+    bool GetUpdated(Container container);
     
   protected:
     std::map<Container, ContainerInfo> containerInfo;

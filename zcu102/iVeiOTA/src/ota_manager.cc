@@ -1,12 +1,32 @@
 #include <algorithm>
 #include <thread>
 #include <unistd.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/uio.h>
+#include <stdio.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <array>
 
 #include "ota_manager.hh"
 #include "config.hh"
 #include "debug.hh"
 
 namespace iVeiOTA {
+  void* CopyThreadFunction(void *data) {
+    OTAManager *manager = (OTAManager*)data;
+    manager->initUpdateFunction();
+    return nullptr;
+  }
+  
+  void* ProcessThreadFunction(void *data) {
+    OTAManager *manager = (OTAManager*)data;
+    manager->processChunk();
+    return nullptr;
+  }
+  
   OTAManager::ChunkType OTAManager::GetChunkType(const std::string &name) {
         if(name == "image")        return ChunkType::Image;
         else if(name == "file")    return ChunkType::File;
@@ -23,6 +43,8 @@ namespace iVeiOTA {
     maxIdentLength = 0;
     chunks.clear();
     state = OTAState::Idle;
+
+    copyThread = -1;
     
     // Then we need to look and see if there is an upate currently in progress and,
     //  if so, try and restore it
@@ -186,15 +208,61 @@ namespace iVeiOTA {
     {
       debug << "Got process chunk message" << std::endl;
       if(state != OTAState::InitDone) {
-        ret.push_back(Message::MakeNACK(message, 0, "OTA Begin not yet called"));
+        ret.push_back(Message::MakeNACK(message, 0, "Initialization not completed"));
       } else {
-        // Just pass the whole message, don't bother processing anything here
-        if(processChunk(message, ret)) {
-          ret.push_back(Message::MakeACK(message));
-        } else {
-          ret.push_back(Message::MakeNACK(message, 0, "Failed to process chunk"));
+        // First we have to get the identifier out of the payload
+        std::string ident = "";
+        unsigned int identEnd = 0;
+        debug << "processing chunk " << identEnd << ":" << maxIdentLength << std::endl;
+        for(; identEnd < message.payload.size() && identEnd < maxIdentLength; identEnd++) {
+          if(message.payload[identEnd] == '\0') {
+            break;
+          }
+          ident += (char)message.payload[identEnd];
         }
-      }      
+        
+        debug << "Chunk ident: " << ident << "  " << identEnd << std::endl;
+        
+        // The payload should be at a null-terminator.  If it isn't something went wrong
+        if(identEnd >= message.payload.size() || message.payload[identEnd] != '\0') {
+          debug << "Malformed chunk message" << std::endl;
+          ret.push_back(Message::MakeNACK(message, 0, "Malformed process message"));
+        } else {
+          // Valid Chunk identifier, check to see if it is in our list
+          auto chunk = std::find_if(chunks.begin(), chunks.end(), [&ident](const ChunkInfo &x) { return x.ident == ident;});
+          if(chunk != chunks.end()) {
+            whichChunk = chunk->ident;
+            processingChunk = true;
+            
+            // We should process this chunk, so first extract the path to the data
+            if(message.header.imm[0] == 0) {
+              // payload contains the chunk data
+              debug << "Chunk data in payload not yet supported" << std::endl;
+              ret.push_back(Message::MakeNACK(message, 0, "Chunk data in payload not implemented"));
+            } else if(message.header.imm[0] == 1) {
+              // payload contains the path to the chunk data, but may have null terminators
+              auto itEnd = message.payload.begin() + identEnd;
+              while(itEnd != message.payload.end() && *itEnd != 0) itEnd++;
+              
+              // Get the string that is the path to the file, then send it for processing
+              std::string path(message.payload.begin() + identEnd, itEnd);
+              debug << "Chunk path " << path << std::endl;
+              intChunkPath = path;
+              
+              if(pthread_create(&processThread, NULL, &ProcessThreadFunction, (void*)this) == 0) {
+                ret.push_back(Message::MakeACK(message));
+              } else {
+                ret.push_back(Message::MakeNACK(message, 0, "Could not create copy thread"));
+              }
+
+            } else {
+              ret.push_back(Message::MakeNACK(message, 0, "Invalid chunk data location"));
+            }
+          } else {
+            ret.push_back(Message::MakeNACK(message, 0, "Chunk identifier not found"));
+          } // end if(found chunk) :: else
+        } // end if(payload null terminated) :: else
+      } // end if(state != InitDone) :: else
     }
     break;
     
@@ -285,14 +353,24 @@ namespace iVeiOTA {
       debug << "Chunk status message" << std::endl;
       std::vector<uint8_t> payload;
       for(auto chunk : chunks) {
+        // Identifier first
         std::copy(chunk.ident.begin(), chunk.ident.end(), std::back_inserter(payload));
         payload.push_back(':');
+        // Then the current status of this chunk
         if(chunk.ident == whichChunk) payload.push_back('1');
         else if(chunk.processed &&  chunk.succeeded) payload.push_back('2');
         else if(chunk.processed && !chunk.succeeded) payload.push_back('3');
         else payload.push_back('0');
-        payload.push_back(',');
+        // Then the order matters flag for this chunk
+        payload.push_back(':');
+        if(chunk.orderMatters) payload.push_back('1');
+        else payload.push_back('0');
+        
+        // Null terminate the list
+        payload.push_back('\0');
       }
+
+      // Double null terminate the list
       payload.push_back('\0');
       ret.push_back(std::unique_ptr<Message>(new Message(Message::OTAStatus, Message::OTAStatus.ChunkStatus,
                                                          chunks.size(), 0, 0, 0, payload)));
@@ -307,7 +385,7 @@ namespace iVeiOTA {
     return ret;
   }
   
-  void OTAManager::initUpdateFunction(bool copyBI, bool copyRoot, bool copySystem) {
+  void OTAManager::initUpdateFunction() {
     debug << "Download thread starting" << std::endl;
     //TODO: This won't really work as it creates a power-cycle race condition
     if(copyBI) {
@@ -315,7 +393,8 @@ namespace iVeiOTA {
       std::string src = config.GetDevice(Container::Active, Partition::BootInfo);
       std::string dest = config.GetDevice(Container::Alternate, Partition::BootInfo);
       debug << "Copying file " << src << " to " << dest << std::endl;
-      CopyFileData(dest, src, 0, 0);
+      uint64_t off = 0;
+      copyFileData(dest, src, off, off);
       
       sleep(1);
       debug << "Setting alternate validity to false after copying BI partition" << std::endl;
@@ -326,14 +405,16 @@ namespace iVeiOTA {
       debug << "starting to copy Root" << std::endl;
       std::string src = config.GetDevice(Container::Active, Partition::Root);
       std::string dest = config.GetDevice(Container::Alternate, Partition::Root);
-      CopyFileData(dest, src, 0, 0);
+      uint64_t off = 0;
+      copyFileData(dest, src, off, off);
     }
     
     if(copySystem) {
       debug << "starting to copy System" << std::endl;
       std::string src = config.GetDevice(Container::Active, Partition::System);
       std::string dest = config.GetDevice(Container::Alternate, Partition::System);
-      CopyFileData(dest, src, 0, 0);
+      uint64_t off = 0;
+      copyFileData(dest, src, off, off);
     }
     
     // Then we have to clear the cache
@@ -364,7 +445,9 @@ namespace iVeiOTA {
     //  at the end copy over all partitions that don't have the flag set
     // Need to get to the point of config file processing before that can happen
     debug << Debug::Mode::Info << "Preparing for update" << std::endl;
-    bool copyBI=true, copyRoot=true, copySystem=true;
+    copyBI     = true;
+    copyRoot   = true;
+    copySystem = true;
     for(auto chunk: chunks) {
       bool copy = true;
       if(chunk.type == ChunkType::Image) {
@@ -385,64 +468,33 @@ namespace iVeiOTA {
     debug << Debug::Mode::Info << (copySystem ? "" : "Not ") << "Copying System"   << std::endl;    
     bootMgr.SetValidity(Container::Alternate, false);
 
-    //std::thread copyThread([=]{this->initDownloadFunction(copyBI && !noCopy, copyRoot && !noCopy, copySystem && !noCopy);});
-    initUpdateFunction(copyBI && !noCopy, copyRoot && !noCopy, copySystem && !noCopy);
+    return pthread_create(&copyThread, NULL, &CopyThreadFunction, (void*)this) == 0;
+    //copyThread = new std::thread([=]{this->initUpdateFunction(copyBI && !noCopy, copyRoot && !noCopy, copySystem && !noCopy);});
+    //initUpdateFunction(copyBI && !noCopy, copyRoot && !noCopy, copySystem && !noCopy);
     
     debug << "Exiting after thread created" << std::endl;
     return true;
   }
   
-  bool OTAManager::processChunk(const Message &message, std::vector<std::unique_ptr<Message>> &ret) {
-    // first we have to get the identifier out of the payload
-    std::string ident = "";
-    unsigned int identEnd = 0;
-    debug << "processing chunk " << identEnd << ":" << maxIdentLength << std::endl;
-    for(; identEnd < message.payload.size() && identEnd < maxIdentLength; identEnd++) {
-      if(message.payload[identEnd] == '\0') {
-        break;
-      }
-      ident += (char)message.payload[identEnd];
-    }
-    
-    debug << "Chunk ident: " << ident << "  " << identEnd << std::endl;
-    
-    // The payload should be at a null-terminator.  If it isn't something went wrong
-    if(identEnd >= message.payload.size() || message.payload[identEnd] != '\0') {
-      debug << "Malformed chunk message" << std::endl;
-      ret.push_back(Message::MakeNACK(message, 0, "Process Chunk message malformed"));
-      return false;
-    }
-    identEnd++;
-    
-    // Then see if we have that chunk in our list
-    bool success = false;
+  void OTAManager::processChunk() {
+    // Find the chunk we are supposed to process first
+    std::string ident = this->whichChunk;
     auto chunk = std::find_if(chunks.begin(), chunks.end(), [&ident](const ChunkInfo &x) { return x.ident == ident;});
     if(chunk != chunks.end()) {
-      whichChunk = chunk->ident;
-      processingChunk = true;
-      // We should process this chunk
-      if(message.header.imm[0] == 0) {
-        // payload contains the chunk data
-        debug << "Chunk data in payload not yet supported" << std::endl;
-        ret.push_back(Message::MakeNACK(message, 0, "Chunk data in payload not yet supported"));
-      } else if(message.header.imm[0] == 1) {
-        // payload contains the path to the chunk data, but may have null terminators
-        auto itEnd = message.payload.begin() + identEnd;
-        while(itEnd != message.payload.end() && *itEnd != 0) itEnd++;
-
-        // Get the string that is the path to the file, then send it for processing
-        std::string path(message.payload.begin() + identEnd, itEnd);
-        debug << "Chunk path " << path << std::endl;
-        success = processChunkFile(*chunk, path);
+      debug << "Processing chunk: " << whichChunk << std::endl;
+      // Process the chunk
+      // TODO: Check if path exists
+      bool success = false;
+      if(processChunkFile(*chunk, intChunkPath)) {
+        chunk->processed = true;
+        chunk->succeeded = true;
+        success = true;
+      } else {
+        chunk->processed = true;
+        chunk->succeeded = false;
+        success = false;
       }
 
-      // Keep track of our chunk meta dataOB
-      chunk->processed = true;
-      chunk->succeeded = success;
-    }
-    
-    // We processed the chunk file, so add it to the journal
-    if(success) {
       try {
         debug << "Succeeded in processing chunk" << std::endl;
         std::ofstream journal(std::string(IVEIOTA_CACHE_LOCATION) + "/journal", std::ios::out | std::ios::app);
@@ -451,12 +503,14 @@ namespace iVeiOTA {
         //TODO: Implement logging
         // Failed to write to the journal -- can't resume a failed update
       }
+    } else {
+      debug << "Didn't find the chunk: " << whichChunk << std::endl;
     }
+    
     
     processingChunk = false;
     whichChunk = "";
-    
-    return success;
+    intChunkPath = "";    
   }
   
   bool OTAManager::processChunkFile(const ChunkInfo &chunk, const std::string &path) {
@@ -481,7 +535,7 @@ namespace iVeiOTA {
       uint64_t offset = chunk.pOffset;
       uint64_t size = chunk.size;
       debug << "Writing image " << path << " to " << dest << " offset: " << offset << " size: " << size << std::endl;
-      uint64_t written = CopyFileData(dest, path, offset, size);
+      uint64_t written = copyFileData(dest, path, offset, size);
       if(written != size) {
         debug << "Didn't write proper amount: " << written << ":" << size << std::endl;
         return false;        
@@ -684,5 +738,54 @@ namespace iVeiOTA {
       // TODO: Add a generic response message for non-failure info cases
     }
     return true;
+  }
+
+  uint64_t OTAManager::copyFileData(const std::string &dest, const std::string &src,
+                        uint64_t offset, uint64_t len) {
+    debug << Debug::Mode::Debug << "Made it here" << std::endl;
+    uint64_t totalWritten = 0;
+    bool copyAll = (len == 0);
+    try {
+     debug << Debug::Mode::Debug << "Copying from " << src << " to " << dest << std::endl;
+      // TODO: This seems too easy.  Go back and double check all this
+      int inf = open(src.c_str(), O_RDONLY);
+      int otf = open(dest.c_str(), O_WRONLY);
+      debug << "Seeking" << std::endl;
+      int res = lseek(otf, offset, SEEK_SET);
+
+      debug << "Starting: " << inf << ":" << otf << ":" << res << std::endl;
+      if(inf < 0 || otf < 0 || res < 0) return 0;
+      
+      char buf[1024*1024];
+      uint64_t remaining = len;
+      int printCount = 0;
+      while((copyAll || remaining > 0)) {
+        uint64_t toRead = (uint64_t)1024*1024;
+        if(!copyAll) toRead = std::min(toRead, remaining);
+        
+        size_t bread = read(inf, buf, toRead);
+        size_t wrote = write(otf, buf, bread);
+
+        if(wrote != bread) {
+          debug << "Wrote different value than read" << std::endl;
+          break;
+        }
+        
+        totalWritten += bread;
+        if(!copyAll) remaining -= bread;
+
+        if(bread != toRead || bread == 0) break;
+        if((printCount++ % 100) == 0) {
+          debug << "Copying " << totalWritten << std::endl;
+          printCount = 1;
+        }
+      } // end while
+      close(inf);
+      close(otf);
+    } catch(...) {
+      
+    }
+    debug << "After: " << totalWritten << std::endl;
+    return totalWritten;
   }
 };

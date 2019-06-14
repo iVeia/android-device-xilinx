@@ -1,6 +1,12 @@
 #ifndef __IVEIOTA_HH
 #define __IVEIOTA_HH
 
+// Semantic versioning for the OTA server/client
+#define IVEIOTA_MAJOR 0
+#define IVEIOTA_MINOR 1
+#define IVEIOTA_PATCH 0
+
+// Where to get the command line for the kernel
 #define IVEIOTA_KERNEL_CMDLINE "/proc/cmdline"
 
 // The place the server will mount partitions for modifications

@@ -5,7 +5,7 @@
 #include <vector>
 #include <memory>
 #include <fstream>
-#include <thread>
+#include <pthread.h>
 
 #include "iveiota.hh"
 #include "message.hh"
@@ -37,7 +37,7 @@ namespace iVeiOTA {
       Preparing,
       InitDone,
     };
-    OTAState state;
+    OTAState state;            // TODO: Should mutex protect this
     
     struct ChunkInfo {
       std::string ident;       // Identifier for the chunk
@@ -65,10 +65,16 @@ namespace iVeiOTA {
     
     bool processingChunk;
     std::string whichChunk;
+    std::string intChunkPath;
+    pthread_t copyThread;
     
     std::vector<ChunkInfo> chunks;
     unsigned int maxIdentLength;
-    
+
+    pthread_t processThread;
+    bool copyBI;
+    bool copyRoot;
+    bool copySystem;
     
   public:
     
@@ -80,11 +86,16 @@ namespace iVeiOTA {
     std::vector<std::unique_ptr<Message>> processActionMessage(const Message &message);
     std::vector<std::unique_ptr<Message>> processStatusMessage(const Message &message);
     bool prepareForUpdate(bool noCopy = false);
-    bool processChunk(const Message &message, std::vector<std::unique_ptr<Message>> &ret);
+    void processChunk();
     bool processChunkFile(const ChunkInfo &chunk, const std::string &path);
     bool processManifest(const std::string &manifest, std::vector<std::unique_ptr<Message>> &ret);
-    void initUpdateFunction(bool copyBI, bool copyRoot, bool copySystem);
-  };
+    void initUpdateFunction();
+    uint64_t copyFileData(const std::string &dest, const std::string &src,
+                          uint64_t offset, uint64_t len);
+
+    friend void* CopyThreadFunction(void *data);
+    friend void* ProcessThreadFunction(void *data);
+  };  
 };
 
 #endif

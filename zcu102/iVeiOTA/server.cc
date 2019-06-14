@@ -62,9 +62,15 @@ int main(int argc, char ** argv) {
     debug << "Got a message " << std::endl;
     if(message.header.type == Message::Management &&
        message.header.subType == Message::Management.Initialize) {
-      // INitialize here if needed
+      // Initialize here if needed
       initialized = true;
-      resp.push_back(Message::MakeACK(message));
+      uint32_t updated = uboot.GetUpdated(Container::Active) ? 1 : 0;
+      uint32_t rev =
+        ((IVEIOTA_MAJOR << 16) & 0x00FF0000) |
+        ((IVEIOTA_MINOR <<  8) & 0x0000FF00) |
+        ((IVEIOTA_PATCH <<  0) & 0x000000FF);
+      resp.push_back(std::unique_ptr<Message>(new Message(Message::Management, Message::Management.Initialize,
+                                                          updated, 0, 0, rev)));
     } else if(!initialized) {
       resp.push_back(Message::MakeNACK(message, 0, "Not yet initialized"));
     } else if(!config.Valid()) {

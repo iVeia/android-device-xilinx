@@ -146,7 +146,12 @@ namespace iVeiOTA {
     return -1;
   }
 
-
+  bool UBootManager::GetUpdated(Container container) {
+    if(containerInfo.find(container) != containerInfo.end()) {
+      return containerInfo[container].updated;
+    }
+    return false;
+  }
 
   bool UBootManager::readContainerInfo(Container container) {
     std::string dev = config.GetDevice(container, Partition::BootInfo);
