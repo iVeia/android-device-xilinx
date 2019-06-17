@@ -76,7 +76,12 @@ namespace iVeiOTA {
             // Check to see if there is an incoming connection
             FD_SET(serverSocket, &rset);
             maxfd = serverSocket + 1;
+        } else {
+          // We have no valid sockets
+          return false;
         }
+
+        // TODO: Make this number configurable?  Decide on the best value here
         struct timeval timeout;
         timeout.tv_sec = 1;
         timeout.tv_usec = 0;

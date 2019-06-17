@@ -40,6 +40,7 @@ namespace iVeiOTA {
   enum class Container {
     Active,
     Alternate,
+    Single,
     Recovery,
 
     Unknown,
@@ -48,6 +49,7 @@ namespace iVeiOTA {
     switch(container) {
     case Container::Active    : return "Active";
     case Container::Alternate : return "Alternate";
+    case Container::Single    : return "Single";
     case Container::Recovery  : return "Recovery";
     case Container::Unknown   : return "Unknown";
     default: return "<<Error>>";

@@ -82,7 +82,9 @@ namespace iVeiOTA {
         if(toks.size() > 0) {
 
           // partition:type:name:device_file
-          //  type is determined by the bootload (currently a or b), which is obtained from the kernel command line
+          //  type is determined by the bootloader (currently a or b), which is obtained from the kernel command line
+          //  alternatively, type can be "single" which means there is only one of it
+          //    getting the alternate or current will result in the same device
           //
           if(toks[0] == "partition") {
             if(toks.size() < 4) continue; // Invalid
@@ -91,7 +93,8 @@ namespace iVeiOTA {
             std::string dev   = toks[3];
 
             Container container;
-            if(active.length() > 0 && which == active)            container = Container::Active;
+            if(which == "single")                                 container = Container::Single;
+            else if(active.length() > 0 && which == active)       container = Container::Active;
             else if(alternate.length() > 0 && which == alternate) container = Container::Alternate;
             else                                                  container = Container::Unknown;
 
@@ -99,9 +102,16 @@ namespace iVeiOTA {
             Partition part = GetPartition(name);
 
             // TODO: Need to check the device file existence too?
-            if(container != Container::Unknown && part != Partition::Unknown) {
+            if(container == Container::Single) {
+              // A single container (no alternate) will get inserted as active, alternate, and single
+              //  so that every GetContainer call will find it
+              debug << "Inserting single container " << ToString(part) << " : " << dev << " for both active and alternate" << std::endl;
+              partitions[Container::Active].insert(std::make_pair(part, dev));
+              partitions[Container::Alternate].insert(std::make_pair(part, dev));
+              partitions[Container::Single].insert(std::make_pair(part, dev));
+            } else if(container != Container::Unknown && part != Partition::Unknown) {              
               debug << "Inserting: " << ToString(container) << ":" << ToString(part) << ":" << dev << std::endl;
-              partitions[container].insert(std::make_pair(part, dev));              
+              partitions[container].insert(std::make_pair(part, dev));
             } else {
               debug <<
                 Debug::Mode::Warn <<

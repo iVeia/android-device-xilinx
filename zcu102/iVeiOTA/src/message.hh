@@ -102,7 +102,7 @@ namespace iVeiOTA {
     static struct _OTAStatusMessage {
       //! OTA Status Message type
       constexpr operator uint8_t() const {return  0x03;}
-      //! Get status on the OTA sytem itself
+      //! Get status on the OTA sytem itself - Not currently used
       /*!
         imm[0] : How many key/value pairs are in the payload
         Payload: Comma delimited list of key:value pairs consisting of the following information
@@ -113,21 +113,20 @@ namespace iVeiOTA {
         imm[0] - Current OTA state
         0 - Idle
         1 - Update not started but can be continued
-        2 - Update is being prepared (containers being copied)
-        3 - Update is ready
-        4 - Update is processing a chunk
-        imm[1] - Number of chunks in the payload
-        Payload: Comma delimited list of <ChunkIdentifier>:Status pairs, where status is:
-        0 - Chunk has not been processed
-        1 - Chunk is being processed
-        2 - Chunk has been processed successfully
-        3 - Chunk has failed processing
+        2 - Update is being initialized
+        3 - Update is being prepared (containers being copied)
+        4 - Update is ready
+        5 - Update is processing a chunk
+        6 - All chunks have been processed
+        imm[1] - 1 if all chunks passed successfully, 0 otherwise
+        Payload: The chunk that is currently being processed, if status == 5
       */
       constexpr static uint8_t UpdateStatus      = 0x10;
       //! Get status on the processing of the current chunk
       /*!
-        imm[0] : 0 if a chunk is not being processed, 1 otherwise
-        Payload: The identifier of the chunk currently being processed
+        imm[0] - The number of chunks needed for this update
+
+        Payload: 
       */       
       constexpr static uint8_t ChunkStatus       = 0x20;
       std::string toString(uint8_t sub) {

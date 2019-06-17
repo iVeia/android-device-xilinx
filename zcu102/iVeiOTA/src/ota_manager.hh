@@ -30,6 +30,7 @@ namespace iVeiOTA {
     // The states the OTA system can be in
     enum class OTAState {
       Idle,             // Idle, not doing anything
+      Canceling,        // We are trying to cancel an update
       UpdateAvailable,  // A download was attempted and can be continued
       Initing,          // Initialization occurring
       Preparing,        // Preparing an update
@@ -37,7 +38,17 @@ namespace iVeiOTA {
       AllDone,          // All chunks have been processed
       AllDoneFailed     // All chunks have been processed but some failed
     };
-    OTAState state;            // TODO: Should mutex protect this
+    OTAState state; // Should only get written in the main thread
+    inline std::string ToString(ChunkType type) {
+      switch(type) {
+      case ChunkType::Image:   return "Image";   break;
+      case ChunkType::Archive: return "Archive"; break;
+      case ChunkType::File:    return "File";    break;
+      case ChunkType::Script:  return "Script";  break;
+      case ChunkType::Dummy:   return "Dummy";   break;
+      default:                 return "Unknown"; break;
+      }
+    }
 
     // Information stored about each type of chunk
     struct ChunkInfo {
@@ -62,13 +73,14 @@ namespace iVeiOTA {
       uint64_t size;           // How many bytes in the image to write
 
       // -------------- For archive chunk types
-      bool complete;           // If this is a complete filesystem archive
+      // TODO: Maybe add a destination for archive chunks so that we can
+      //       untar many files to a subdirectory for some reason
+      bool complete;           // Is this is a complete filesystem archive
                                // If true, we will delete all files on the destination
                                //  filesystem before unpacking
 
       // -------------- For File chunk types
-      std::string filePath;    // Destination path for file chunks
-      
+      std::string filePath;    // Destination path for file chunks      
     };
 
     // For handling the processing of chunks
@@ -87,7 +99,8 @@ namespace iVeiOTA {
     bool copyBI;          // True if we need to copy the BootInfo partition during initialization
     bool copyRoot;        // True if we need to copy the Root partition during initialization
     bool copySystem;      // True if we need to copy the System partition during initialization
-    
+
+    // For handling the canceling of an update
     bool cancelUpdate;    // True if we are trying to cancel the update
     
   public:

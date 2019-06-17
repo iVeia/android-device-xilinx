@@ -13,6 +13,7 @@
 #include "ota_manager.hh"
 #include "config.hh"
 #include "debug.hh"
+#include "support.hh"
 
 namespace iVeiOTA {
   // These threads are targets for pthread functions.  They may not be needed anymore
@@ -234,14 +235,10 @@ namespace iVeiOTA {
       if(state == OTAState::Idle) {
         ret.push_back(Message::MakeNACK(message, 0, "Update not in progress"));
       } else {
-        // Set our state to not active and clear out the chunks
-        // TODO: Need to clear out all our state
-        chunks.clear();
-        ret.push_back(Message::MakeNACK(message, 0, "Cancel not yet supported"));
-        
-        //TODO: delete the journal and the cached manifest
-        //state = OTAState::Idle;
-        //ret.push_back(Message::MakeACK(message));
+        // We can't do all this right now, so set a flag so it happens in
+        //  processing
+        Cancel();
+        ret.push_back(Message::MakeACK(message));
       }
     }
     break;
@@ -411,6 +408,7 @@ namespace iVeiOTA {
       case OTAState::UpdateAvailable: status = 1; break;
       case OTAState::Initing:         status = 2; break;
       case OTAState::Preparing:       status = 3; break;
+      case OTAState::Canceling:       status = 3; break; // Canceling will count as preparing
       case OTAState::InitDone:
         if(!processingChunk) {
           status = 4;
@@ -515,13 +513,12 @@ namespace iVeiOTA {
           // TODO: Really need to make sure this always works
           RemoveAllFiles(mount.Path() + "/", true);
         } else {
-          debug << Debug::Mode::Err << "Unable to mount cache partition" << std::endl << Debug::Mode::Info;
+          debug << Debug::Mode::Err << "Unable to mount cache partition" << std::endl;
         }
       }// unmount
     }
     
     debug << "Thread finished" << std::endl;
-    state = OTAState::InitDone;
   }
   
   bool OTAManager::prepareForUpdate(bool noCopy) {
@@ -554,7 +551,7 @@ namespace iVeiOTA {
     debug << Debug::Mode::Info << (copySystem ? "" : "Not ") << "Copying System"   << std::endl;    
     bootMgr.SetValidity(Container::Alternate, false);
 
-    // We have to make the thread stack size largert
+    // We have to make the thread stack size larger.  See the comment for processChunk for more details
     size_t stacksize;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
@@ -563,7 +560,9 @@ namespace iVeiOTA {
     pthread_attr_getstacksize(&attr, &stacksize);
     debug << "Stack size is " << stacksize << std::endl; 
     int ret = pthread_create(&copyThread, &attr, &CopyThreadFunction, (void*)this);
-
+    if(ret != 0) {
+      debug << Debug::Mode::Failure << "Could not create chunk process thread" << std::endl;
+    }
     debug << "Exiting after thread created" << std::endl;
     return ret == 0;
   }
@@ -575,7 +574,6 @@ namespace iVeiOTA {
     if(chunk != chunks.end()) {
       debug << "Processing chunk: " << whichChunk << std::endl;
       // Process the chunk
-      // TODO: Check if path exists
       bool success = false;
       if(processChunkFile(*chunk, intChunkPath)) {
         chunk->processed = true;
@@ -588,7 +586,7 @@ namespace iVeiOTA {
       }
 
       try {
-        debug << "Succeeded in processing chunk" << std::endl;
+        debug << "Succeeded in processing chunk: " << chunk->ident << std::endl;
         std::ofstream journal(std::string(IVEIOTA_CACHE_LOCATION) + "/journal", std::ios::out | std::ios::app);
         journal << chunk->ident << ":" << (success ? "1" : "2");
       } catch(...) {
@@ -598,16 +596,18 @@ namespace iVeiOTA {
     } else {
       debug << "Didn't find the chunk: " << whichChunk << std::endl;
     }
-        
-    processingChunk = false;
-    whichChunk = "";
-    intChunkPath = "";    
   }
   
   bool OTAManager::processChunkFile(const ChunkInfo &chunk, const std::string &path) {
     bool success = false;
+
+    // First, see if the file exists
+    {
+      std::ifstream existTest(path);
+      if(!existTest.good()) return false;
+    } // end scope to close file
     
-    //First we need to check the hash
+    // Then we need to check the hash
     {
       std::string hashValue = GetHashValue(chunk.hashType, path);
       if(hashValue != chunk.hashValue) {
@@ -616,7 +616,8 @@ namespace iVeiOTA {
         if(chunk.type != ChunkType::Dummy) return false;
       }
     }
-    
+
+    // Then process it based on type
     switch(chunk.type) {
       
       ///////////////////////////////////////////////////////////////////////////
@@ -744,7 +745,7 @@ namespace iVeiOTA {
     for(std::string line : lines) {
       std::vector<std::string> toks = Split(line, ":");
       if(toks.size() < 6) {
-        debug << Debug::Mode::Info << "  > " << line << std::endl;
+        debug << "  > " << line << std::endl;
         // This isn't a valid chunk
         continue;
       }
@@ -804,11 +805,12 @@ namespace iVeiOTA {
         break;
         
       case ChunkType::Script:
-        // TODO: Add a generic response message for non-failure info cases
+        debug << Debug::Mode::Err << "Script type not yet handled" << std::endl;
         continue; // not handled yet
         
       default:
-        // TODO: Add a generic response message for non-failure info cases
+        // Don't process this
+        debug << Debug::Mode::Err << "Unknown chunk type: " << ToString(chunk.type) << std::endl;
         continue;
       }
       
@@ -816,24 +818,26 @@ namespace iVeiOTA {
       debug << "maxIdentLength : " << maxIdentLength << " new ident length: " << chunk.ident.length() << std::endl;
       if(chunk.ident.length() > maxIdentLength) maxIdentLength = chunk.ident.length();
       
-      debug << Debug::Mode::Info << "Found chunk: " << chunk.ident << ":" << ToString(chunk.dest) << std::endl;
+      debug << Debug::Mode::Info << "Found chunk: " << chunk.ident << ":" << iVeiOTA::ToString(chunk.dest) << std::endl;
       chunks.push_back(chunk);
     } // end for(line : lines)
     
-    // This seem to be a valid manifest, so we should save it to the cache
+    // This seems to be a valid manifest, so we should save it to the cache
     try {
       std::ofstream manifest_cache(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
       manifest_cache << manifest;
     } catch(...) {
-      debug << Debug::Mode::Err << "Failed to cache manifest" << std::endl << Debug::Mode::Info;
-      // Can't write to the cache, so we can't resume this download
-      // TODO: Add a generic response message for non-failure info cases
+      debug << Debug::Mode::Err << "Failed to cache manifest" << std::endl;
     }
     return true;
   }
 
   void OTAManager::Cancel() {
+    // Setting this flag will cause the processing threads to exit
     cancelUpdate = true;
+
+    // Then we have to clear out our other state
+    state = OTAState::Canceling;
   }
   
   bool OTAManager::Process() {
@@ -842,7 +846,11 @@ namespace iVeiOTA {
       // We need to join the copy thread
       pthread_join(copyThread, NULL);
       copyThread = -1;
-      joinCopyThread = false;      
+      joinCopyThread = false;
+      
+      if(!cancelUpdate) {
+        state = OTAState::InitDone;
+      }
     }
 
     if(joinProcessThread && processThread != -1) {
@@ -851,16 +859,35 @@ namespace iVeiOTA {
       processThread = -1;
       joinProcessThread = false;
 
-      // We should check to see if all chunks have been processed now
-      bool allProcessed = true;
-      bool allSucceeded = true;
-      for(auto chunk : chunks) {
-        if(!chunk.processed) allProcessed = false;
-        if(!chunk.succeeded) allSucceeded = false;
-      }
+      // update our data about this chunk
+      processingChunk = false;
+      whichChunk = "";
+      intChunkPath = "";    
 
-      if(allProcessed && allSucceeded) state = OTAState::AllDone;
-      else if(allProcessed) state = OTAState::AllDoneFailed;
+      // We should check to see if all chunks have been processed now
+      if(!cancelUpdate) {
+        bool allProcessed = true;
+        bool allSucceeded = true;
+        for(auto chunk : chunks) {
+          if(!chunk.processed) allProcessed = false;
+          if(!chunk.succeeded) allSucceeded = false;
+        }
+        
+        if(allProcessed && allSucceeded) state = OTAState::AllDone;
+        else if(allProcessed) state = OTAState::AllDoneFailed;
+      }
+    }
+
+    // If all our threads are join()ed, then we can turn off the cancel flag
+    //  and move back to the idle state
+    if(cancelUpdate &&
+       (!joinProcessThread && processThread == -1) &&
+       (!joinCopyThread && copyThread == -1)
+      ) {
+      cancelUpdate = false;
+      chunks.clear();
+      maxIdentLength = 0;
+      state = OTAState::Idle;
     }
     
     return true;
