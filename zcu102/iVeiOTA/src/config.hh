@@ -20,23 +20,24 @@ namespace iVeiOTA {
 
     bool Valid() const;
   protected:
-    //struct partition_info {
-    //  Container container;
-    //  Partition partition;
-    //  std::string device;
-    //};
-    std::string configPath;
-    std::string cmdLinePath;
-    
+    std::string configPath;  // Path to our configuration file
+    std::string cmdLinePath; // Path to the kernel command line
+
+    // Mapping from our containers to our partition device strings
     std::map<Container, std::map<Partition, std::string>> partitions;
+
+    // Mapping from hash algorithm names to program locations
     std::map<HashAlgorithm, std::string> hashAlgorithms;
     
-    std::string active;
-    std::string alternate;
+    std::string active;    // Name of the active container
+    std::string alternate; // Name of the alternate container
 
     bool updated;
   };
 
+  // Keep a global configuration so that everyone has access
+  //  It should be read-only after it is created so there shouldn't be an issue
+  //  with thread safety
   extern GlobalConfig config;
 };
 

@@ -263,7 +263,7 @@ namespace iVeiOTA {
             for(char c : msg) payload.push_back((uint8_t)c);
         }
         return std::unique_ptr<Message>(new Message(Management, Management.NACK, 
-                       m.header.type, m.header.subType, 
+                       m.header.type, m.header.subType,
                        errorCode, 0, payload));
     }
 

@@ -3,8 +3,11 @@
 
 // Semantic versioning for the OTA server/client
 #define IVEIOTA_MAJOR 0
-#define IVEIOTA_MINOR 1
-#define IVEIOTA_PATCH 0
+#define IVEIOTA_MINOR 3
+#define IVEIOTA_PATCH 1
+
+//TODO: Much of this should be in a config file, or be passed as a command line
+//      parameter.
 
 // Where to get the command line for the kernel
 #define IVEIOTA_KERNEL_CMDLINE "/proc/cmdline"

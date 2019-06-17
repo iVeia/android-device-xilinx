@@ -79,6 +79,57 @@ namespace iVeiOTA {
     return result;
   }
   
+  uint64_t CopyFileData(const std::string &dest, const std::string &src,
+                        uint64_t offset, uint64_t len,
+                        volatile bool *cancel) {
+    debug << Debug::Mode::Debug << "Made it here" << std::endl;
+    uint64_t totalWritten = 0;
+    bool copyAll = (len == 0);
+    try {
+     debug << Debug::Mode::Debug << "Copying from " << src << " to " << dest << std::endl;
+      // TODO: This seems too easy.  Go back and double check all this
+      int inf = open(src.c_str(), O_RDONLY);
+      int otf = open(dest.c_str(), O_WRONLY);
+      debug << "Seeking" << std::endl;
+      int res = lseek(otf, offset, SEEK_SET);
+
+      debug << "Starting: " << inf << ":" << otf << ":" << res << std::endl;
+      if(inf < 0 || otf < 0 || res < 0) return 0;
+      
+      char buf[1024*1024];
+      uint64_t remaining = len;
+      int printCount = 0;
+      while((copyAll || remaining > 0) && 
+            (cancel != nullptr && !(*cancel))) {
+        uint64_t toRead = (uint64_t)1024*1024;
+        if(!copyAll) toRead = std::min(toRead, remaining);
+        
+        size_t bread = read(inf, buf, toRead);
+        size_t wrote = write(otf, buf, bread);
+
+        if(wrote != bread) {
+          debug << "Wrote different value than read" << std::endl;
+          break;
+        }
+        
+        totalWritten += bread;
+        if(!copyAll) remaining -= bread;
+
+        if(bread != toRead || bread == 0) break;
+        if((printCount++ % 100) == 0) {
+          debug << "Copying " << totalWritten << std::endl;
+          printCount = 1;
+        }
+      } // end while
+      close(inf);
+      close(otf);
+    } catch(...) {
+      
+    }
+    debug << "After: " << totalWritten << std::endl;
+    return totalWritten;
+  }
+
   bool dirExists(std::string dir_path) {
     struct stat ss;
     

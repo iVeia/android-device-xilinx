@@ -79,6 +79,9 @@ namespace iVeiOTA {
   
   std::string RunCommand(std::string command);
   int RemoveAllFiles(const std::string &path, bool recursive);
+
+  uint64_t CopyFileData(const std::string &dest, const std::string &src, uint64_t off, uint64_t size,
+                        volatile bool *cancel = 0);
   
   //TODO: Consider replacing these with returns of unique_ptr if copying becomes too much
   std::vector<std::string> Split(std::string str, std::string delims);

@@ -13,32 +13,33 @@
 #include "uboot.hh"
 
 namespace iVeiOTA {
-  struct OTAStatus {
-    
-  };
-  
   class OTAManager {
   protected:
+    // The types of chunks the system supports
     enum class ChunkType {
-      Image,
-      Archive,
-      File,
-      Script,
-      Dummy,
+      Image,    // A full filesystem image
+      Archive,  // A zipped archive (only what tar -xf supports)
+      File,     // A single file copied to a destination
+      Script,   // A script to execute (not implemented yet)
+      Dummy,    // A dummy chunk that does nothing
       
-      Unknown,
+      Unknown,  // An error
     };    
     static ChunkType GetChunkType(const std::string &name);
 
+    // The states the OTA system can be in
     enum class OTAState {
-      Idle,
-      UpdateAvailable,
-      Initing,
-      Preparing,
-      InitDone,
+      Idle,             // Idle, not doing anything
+      UpdateAvailable,  // A download was attempted and can be continued
+      Initing,          // Initialization occurring
+      Preparing,        // Preparing an update
+      InitDone,         // Initialization and preparation is done
+      AllDone,          // All chunks have been processed
+      AllDoneFailed     // All chunks have been processed but some failed
     };
     OTAState state;            // TODO: Should mutex protect this
-    
+
+    // Information stored about each type of chunk
     struct ChunkInfo {
       std::string ident;       // Identifier for the chunk
       
@@ -48,51 +49,86 @@ namespace iVeiOTA {
       ChunkType type;          // Type of this chunk for processing
       Partition dest;          // Which partition this goes chunk goes into
       
-      bool orderMatters;       //
+      bool orderMatters;       // If order matters, this chunk MUST be processed
+                               // before any chunks that come after it
       
+      bool processed;          // If this chunk has been processed
+      bool succeeded;          // If this chunks succeeded processing
+
       // TODO: maybe make this a union?
+      // -------------- For image chunk types
       uint64_t pOffset;        // Physical offset (on the device) for Image chunks
       uint64_t fOffset;        // File offset for Image chunks
       uint64_t size;           // How many bytes in the image to write
 
-      bool complete;
-      
+      // -------------- For archive chunk types
+      bool complete;           // If this is a complete filesystem archive
+                               // If true, we will delete all files on the destination
+                               //  filesystem before unpacking
+
+      // -------------- For File chunk types
       std::string filePath;    // Destination path for file chunks
       
-      bool processed;
-      bool succeeded;
     };
-    
-    bool processingChunk;
-    std::string whichChunk;
-    std::string intChunkPath;
-    pthread_t copyThread;
-    
-    std::vector<ChunkInfo> chunks;
-    unsigned int maxIdentLength;
 
-    pthread_t processThread;
-    bool copyBI;
-    bool copyRoot;
-    bool copySystem;
+    // For handling the processing of chunks
+    pthread_t processThread;  // The thread that does the processing
+    bool processingChunk;     // True if we are currently processing a chunk
+    bool joinProcessThread;   // True if the processing thread has completed and needs to be join()ed
+    std::string whichChunk;   // Which chunk we are processing
+    std::string intChunkPath; // The path to the chunk file, for internal use
+    
+    std::vector<ChunkInfo> chunks; // A list of chunks we need for an update
+    unsigned int maxIdentLength;   // The max identifier encountered in the manifest
+
+    // For the handling of update initialization
+    pthread_t copyThread; // The thread that does the initialization
+    bool joinCopyThread;  // True if the initialization thread needs to be join()ed
+    bool copyBI;          // True if we need to copy the BootInfo partition during initialization
+    bool copyRoot;        // True if we need to copy the Root partition during initialization
+    bool copySystem;      // True if we need to copy the System partition during initialization
+    
+    bool cancelUpdate;    // True if we are trying to cancel the update
     
   public:
-    
-    explicit OTAManager(UBootManager &bootMgr, std::string configFile = IVEIOTA_DEFAULT_CONFIG);
+
+    explicit OTAManager(UBootManager &bootMgr);
+
+    // Called to process an incoming command
+    //  We can only handle commands of type
+    //  OTAUpdate
+    //  OTAStatus
     std::vector<std::unique_ptr<Message>> ProcessCommand(const Message &message);
+
+    // Called to cancel an update
+    void Cancel();
+
+    // Must be called periodically to handle internal bookeeping, such as thread join()ing
+    bool Process();
     
   protected:
-    UBootManager &bootMgr;
+    UBootManager &bootMgr; // A handle to our boot manager, for setting container validity
+
+    // Our message handlers
     std::vector<std::unique_ptr<Message>> processActionMessage(const Message &message);
     std::vector<std::unique_ptr<Message>> processStatusMessage(const Message &message);
+
+    // To prepare for an update we potentially need to copy the current container over to
+    //  the alternate, or backup container.  We also have to clear the cache on Android
+    // If noCopy == true, we will skip the copy step, but the alternate container will probalby
+    //  not be bootable
     bool prepareForUpdate(bool noCopy = false);
+
+    // Called to process a chunk, and to process a chunk file
     void processChunk();
     bool processChunkFile(const ChunkInfo &chunk, const std::string &path);
-    bool processManifest(const std::string &manifest, std::vector<std::unique_ptr<Message>> &ret);
-    void initUpdateFunction();
-    uint64_t copyFileData(const std::string &dest, const std::string &src,
-                          uint64_t offset, uint64_t len);
 
+    // Process a manifest file.  This will extract all the chunks needed for the
+    //  update, and call the prepareForUpdate function to start initialization
+    bool processManifest(const std::string &manifest);
+    void initUpdateFunction();
+
+    // Targets for pthread's
     friend void* CopyThreadFunction(void *data);
     friend void* ProcessThreadFunction(void *data);
   };  

@@ -15,18 +15,21 @@
 #include "debug.hh"
 
 namespace iVeiOTA {
+  // These threads are targets for pthread functions.  They may not be needed anymore
   void* CopyThreadFunction(void *data) {
     OTAManager *manager = (OTAManager*)data;
     manager->initUpdateFunction();
+    manager->joinCopyThread = true;
     return nullptr;
-  }
-  
+  }  
   void* ProcessThreadFunction(void *data) {
     OTAManager *manager = (OTAManager*)data;
     manager->processChunk();
+    manager->joinProcessThread = true;
     return nullptr;
   }
-  
+
+  // Extract the chunk type based on the (string) name
   OTAManager::ChunkType OTAManager::GetChunkType(const std::string &name) {
         if(name == "image")        return ChunkType::Image;
         else if(name == "file")    return ChunkType::File;
@@ -37,14 +40,21 @@ namespace iVeiOTA {
         else                       return ChunkType::Unknown;
     }
 
-  OTAManager::OTAManager(UBootManager &bootMgr, std::string configFile) : bootMgr(bootMgr) {
-    // Open and process the config file
+  OTAManager::OTAManager(UBootManager &bootMgr) : bootMgr(bootMgr) {
+    // Set our internal state to default to no update in progress and not doing anything
     processingChunk = false;
     maxIdentLength = 0;
     chunks.clear();
     state = OTAState::Idle;
 
+    // Our threads are idle
     copyThread = -1;
+    processThread = -1;
+    joinCopyThread = false;
+    joinProcessThread = false;
+
+    // We have no update in progress, so no update to cancel
+    cancelUpdate = false;
     
     // Then we need to look and see if there is an upate currently in progress and,
     //  if so, try and restore it
@@ -54,10 +64,10 @@ namespace iVeiOTA {
       std::stringstream ss;
       ss << manifest_cache.rdbuf();
       
-      std::vector<std::unique_ptr<Message>> dummy;
-      
-      debug << "Manifest seems to be valid...  processing" << std::endl;
-      manifestValid = processManifest(ss.str(), dummy);
+      if(ss.str().length() > 0) {
+        debug << Debug::Mode::Info << "Cached manifest seems to be valid...  processing" << std::endl;
+        manifestValid = processManifest(ss.str());
+      }
     } catch(...) {
       // There was no cached manifest, so if there is a journal we should delete it
       //  but that will happen after this
@@ -66,13 +76,21 @@ namespace iVeiOTA {
     
     //TODO: Delete the journal if it is there
     if(manifestValid) {
-      // There was a cached manifest, so process it and the journal
-      //TODO: set the state to indicate there is a cached update available
-      //  when that is working
+      // There was, what appears to be, a valid cached manifest from a previous update
+      //  So look to see if there is a cached journal so we can try and continue from
+      //  where we left off
+      //TODO: set the state to indicate there is a cached update available when that is working
       try {
         std::ifstream journal(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
         std::string line;
-        debug << "Processing journal" << std::endl;
+        debug << Debug::Mode::Info << "Processing cached journal" << std::endl;
+
+        // A line in the journal is <ident:state> for each chunk that is processed
+        //  state is:
+        //    1 - succeeded
+        //    anything else - failed
+        //  We don't need to keep not processed information, because things only go
+        //  into the journal when they are processed
         while(std::getline(journal, line)) {
           std::vector<std::string> toks = Split(line, ":");
           if(toks.size() < 2) continue;
@@ -93,9 +111,10 @@ namespace iVeiOTA {
       }
     }
   }
-  
+
+  // Process a command from the network interface
   std::vector<std::unique_ptr<Message>> OTAManager::ProcessCommand(const Message &message) {
-    debug << "processing command message" << std::endl;
+    debug << "Processing command message" << std::endl;
     switch(message.header.type) {
     case Message::OTAStatus:
       debug << " -- status message" << std::endl;
@@ -108,25 +127,37 @@ namespace iVeiOTA {
       break;
       
     default:
-      debug << "unknown message" << std::endl;
+      debug << Debug::Mode::Warn << "Unknown message: " << message.header.toString() << std::endl;
       std::vector<std::unique_ptr<Message>> ret;
       ret.push_back(Message::MakeNACK(message, 0, "Unknown message"));
       return ret;
     }
   }
-  
+
+  // Process an action message.  Action messages are those that trigger some sort of
+  //  activity in the OTA manager
+  // TODO: This should really be split up.  It is a little large for a switch statement
   std::vector<std::unique_ptr<Message>> OTAManager::processActionMessage(const Message &message) {
     std::vector<std::unique_ptr<Message>> ret;
-    
-    if(message.header.type != Message::OTAUpdate) return ret;
+
+    // Make sure we aren't trying to process a message that isn't actually for us
+    if(message.header.type != Message::OTAUpdate) {
+      debug << Debug::Mode::Err << "processActionMessage called with the wrong type of message!" << message.header.toString() << std::endl;
+      ret.push_back(Message::MakeNACK(message, 0, "processActionMessage called with the wrong type of message"));
+      return ret;
+    }
     
     switch(message.header.subType) {
+
+      // ****************************************************************************** //
+      // ------------------------- Begin an update ---------------------------------------
+      // ****************************************************************************** //
     case Message::OTAUpdate.BeginUpdate:
     {
       debug << "Got begin update message" << std::endl;
       if(state != OTAState::Idle) {
-        debug << "update in progress" << std::endl;
-        ret.push_back(Message::MakeNACK(message, 0, "Update in progress or available, cancel first"));
+        debug << "Update already in progress" << std::endl;
+        ret.push_back(Message::MakeNACK(message, 0, "Update in progress or can be continued"));
       } else {
         debug << "State => initing" << std::endl;
         state = OTAState::Initing;
@@ -135,18 +166,20 @@ namespace iVeiOTA {
         std::string manifest;
         if(message.header.imm[0] == 0) {
           // Manifest is in the payload
+          // TODO: This has not been tested
           manifest.assign(message.payload.begin(), message.payload.end());
         } else if(message.header.imm[0] == 1) {
           // Manifest is on the filesystem and payload contains the path
-          // TODO: Error checking
           std::string path(message.payload.begin(), message.payload.end());
           debug << "Manifest path: " << path << std::endl;
           try {
+            // Read all the manifest data into a string for processing
             std::ifstream input(path);
             std::stringstream ss;
             ss << input.rdbuf();
             manifest = ss.str();
-          } catch(...) {            
+          } catch(...) {
+            debug << "Failed to read manifest data into a string" << std::endl;
             manifest = "";
             ret.push_back(Message::MakeNACK(message, 0, "Invalid Manifest Path"));
           }
@@ -154,14 +187,13 @@ namespace iVeiOTA {
         
         // If we managed to make a manifest out of that, then process it
         if(manifest.length() > 0) {
-          if(processManifest(manifest, ret)) {
-            // If we are here, then we have a proper manifest and can continue with the
-            //  update
+          if(processManifest(manifest)) {
+            // If we are here, then we have a proper manifest and can continue with the update
           
-            //TODO: This needs to be on a thread
             debug << "state -> preparing" << std::endl;
             state = OTAState::Preparing;
-            if(prepareForUpdate(message.header.imm[3] == 42)) {
+            if(prepareForUpdate()) {
+              // We succeeded in starting the preparation for an update
               ret.push_back(Message::MakeACK(message));
             } else {
               // Failed to prepare for update
@@ -178,69 +210,93 @@ namespace iVeiOTA {
         } else {
           debug << "state -> idle" << std::endl;
           state = OTAState::Idle;
-          ret.push_back(Message::MakeNACK(message, 0, "Invalid manifest"));
+          ret.push_back(Message::MakeNACK(message, 0, "Could not read manifest"));
         }
       } // end if(state != Idle) else
     } // end case BeginUpdate
     break;
     
+    // ****************************************************************************** //
+    // ------------------------- Continue an update ---------------------------------
+    // ****************************************************************************** //
     case Message::OTAUpdate.ContinueUpdate:
     {
+      debug << "Attempting to continue update" << std::endl;
       ret.push_back(Message::MakeNACK(message, 0, "Continue not yet supported"));
     }
     break;
-    
+
+    // ****************************************************************************** //
+    // ------------------------- Cancel an update -----------------------------------
+    // ****************************************************************************** //
     case Message::OTAUpdate.CancelUpdate:
     {
       if(state == OTAState::Idle) {
         ret.push_back(Message::MakeNACK(message, 0, "Update not in progress"));
       } else {
         // Set our state to not active and clear out the chunks
+        // TODO: Need to clear out all our state
         chunks.clear();
+        ret.push_back(Message::MakeNACK(message, 0, "Cancel not yet supported"));
+        
         //TODO: delete the journal and the cached manifest
-        state = OTAState::Idle;
-        ret.push_back(Message::MakeACK(message));
+        //state = OTAState::Idle;
+        //ret.push_back(Message::MakeACK(message));
       }
     }
     break;
     
+    // ****************************************************************************** //
+    // ------------------------- Process a chunk ------------------------------------
+    // ****************************************************************************** //
     case Message::OTAUpdate.ProcessChunk:
     {
       debug << "Got process chunk message" << std::endl;
       if(state != OTAState::InitDone) {
-        ret.push_back(Message::MakeNACK(message, 0, "Initialization not completed"));
+        ret.push_back(Message::MakeNACK(message, 0, "Cannot process chunk now"));
       } else {
         // First we have to get the identifier out of the payload
         std::string ident = "";
         unsigned int identEnd = 0;
-        debug << "processing chunk " << identEnd << ":" << maxIdentLength << std::endl;
+        debug << " -- processing chunk " << identEnd << ":" << maxIdentLength << std::endl;
         for(; identEnd < message.payload.size() && identEnd < maxIdentLength; identEnd++) {
           if(message.payload[identEnd] == '\0') {
             break;
           }
           ident += (char)message.payload[identEnd];
-        }
-        
-        debug << "Chunk ident: " << ident << "  " << identEnd << std::endl;
+        }        
+        debug << " -- chunk ident: " << ident << "  " << identEnd << std::endl;
         
         // The payload should be at a null-terminator.  If it isn't something went wrong
         if(identEnd >= message.payload.size() || message.payload[identEnd] != '\0') {
-          debug << "Malformed chunk message" << std::endl;
+          debug << Debug::Mode::Warn << "Malformed chunk message" << std::endl;
           ret.push_back(Message::MakeNACK(message, 0, "Malformed process message"));
         } else {
           // Valid Chunk identifier, check to see if it is in our list
-          auto chunk = std::find_if(chunks.begin(), chunks.end(), [&ident](const ChunkInfo &x) { return x.ident == ident;});
+          auto chunk = std::find_if(chunks.begin(), chunks.end(),
+                                    [&ident](const ChunkInfo &x) { return x.ident == ident;});
           if(chunk != chunks.end()) {
+            // Found it, so indicate that we are processing it
             whichChunk = chunk->ident;
             processingChunk = true;
             
             // We should process this chunk, so first extract the path to the data
             if(message.header.imm[0] == 0) {
+              // TODO: Implement chunk data in message payload
               // payload contains the chunk data
-              debug << "Chunk data in payload not yet supported" << std::endl;
+              debug << Debug::Mode::Err << "Chunk data in payload not yet supported" << std::endl;
               ret.push_back(Message::MakeNACK(message, 0, "Chunk data in payload not implemented"));
+
+              // Mark this as failed for now
+              chunk->processed = true;
+              chunk->succeeded = false;
+              whichChunk = "";
+              processingChunk = false;
             } else if(message.header.imm[0] == 1) {
               // payload contains the path to the chunk data, but may have null terminators
+
+              // Get past the null terminator
+              identEnd++;
               auto itEnd = message.payload.begin() + identEnd;
               while(itEnd != message.payload.end() && *itEnd != 0) itEnd++;
               
@@ -248,17 +304,33 @@ namespace iVeiOTA {
               std::string path(message.payload.begin() + identEnd, itEnd);
               debug << "Chunk path " << path << std::endl;
               intChunkPath = path;
-              
-              if(pthread_create(&processThread, NULL, &ProcessThreadFunction, (void*)this) == 0) {
+
+              // TODO: Investigate this
+              // We need to increase the stack size for the processing thread.  For some reason the
+              //  CopyFileData function (or the function that calls it) overflows the 1M stack
+              // Increasing it to 4M seems to be plently, but overflowing a 1M stack is surprising
+              //  1M is a lot of stack space, so something seems odd here
+              size_t stacksize;
+              pthread_attr_t attr;
+              pthread_attr_init(&attr);
+              pthread_attr_getstacksize(&attr, &stacksize);
+              debug << "Setting process stack size: " << pthread_attr_setstacksize(&attr, stacksize * 4) << " ** " << std::endl;
+              pthread_attr_getstacksize(&attr, &stacksize);
+              debug << "Stack process size is " << stacksize << std::endl;
+
+              // Create the thread and start running it
+              if(pthread_create(&processThread, &attr, &ProcessThreadFunction, (void*)this) == 0) {
                 ret.push_back(Message::MakeACK(message));
               } else {
+                debug << Debug::Mode::Failure << "Could not create copy thread" << std::endl;
                 ret.push_back(Message::MakeNACK(message, 0, "Could not create copy thread"));
               }
-
             } else {
+              debug << Debug::Mode::Warn << "Invalid chunk data location" << std::endl;
               ret.push_back(Message::MakeNACK(message, 0, "Invalid chunk data location"));
             }
           } else {
+            debug << Debug::Mode::Warn << "Chunk identifier not found" << std::endl;
             ret.push_back(Message::MakeNACK(message, 0, "Chunk identifier not found"));
           } // end if(found chunk) :: else
         } // end if(payload null terminated) :: else
@@ -266,21 +338,32 @@ namespace iVeiOTA {
     }
     break;
     
+    // ****************************************************************************** //
+    // ------------------------- Finalize an update ---------------------------------
+    // ****************************************************************************** //
     case Message::OTAUpdate.Finalize:
     {
-      bool all_processed = true;
-      bool all_succeeded = true;
-      for(auto chunk : chunks) {
-        if(!chunk.processed) all_processed = false;
-        if(!chunk.succeeded) all_succeeded = false;
-      }
-      
-      if(state != OTAState::InitDone) {
-        ret.push_back(Message::MakeNACK(message, 0, "OTA Begin not yet called"));
-      } else if(!all_processed) {
-        ret.push_back(Message::MakeNACK(message, 0, "Not all chunks have been processed"));
-      } else if(!all_succeeded) {
-        ret.push_back(Message::MakeNACK(message, 0, "Not all chunks succeeded"));
+      // Send status back based on what state we are currently in
+      //  We can only finalize when all chunks have been processed successfully
+      if(state != OTAState::AllDone) {
+        switch(state) {
+        case OTAState::Idle:
+        case OTAState::UpdateAvailable:
+          ret.push_back(Message::MakeNACK(message, 0, "OTABegin has not been called"));
+          break;
+        case OTAState::Initing:
+        case OTAState::Preparing:
+          ret.push_back(Message::MakeNACK(message, 0, "OTABegin initialization not complete"));
+          break;
+        case OTAState::InitDone:
+          ret.push_back(Message::MakeNACK(message, 0, "Chunks remaining to be processed"));
+          break;
+        case OTAState::AllDoneFailed:
+          ret.push_back(Message::MakeNACK(message, 0, "Some chunks failed processing"));
+          break;
+        default:
+          ret.push_back(Message::MakeNACK(message, 0, "Internal error"));
+        } // end switch(state)
       } else {
         // TODO: This mounts/remount 4 times -- need to do better at some point
         int currentRev = bootMgr.GetRev(Container::Active);
@@ -298,15 +381,18 @@ namespace iVeiOTA {
     break;
     
     default:
-    { 
-      ret.push_back(Message::MakeNACK(message, 0, "Invalid Command"));
+    {
+      debug << Debug::Mode::Warn << "Invalid command sub type: " << message.header.toString() << std::endl;
+      ret.push_back(Message::MakeNACK(message, 0, "Invalid command sub type"));
     }
     break;            
     } // end switch(subType)
     
     return ret;
   }
-  
+
+  // Process a status message.  A status message is read-only and just gets information from
+  //  the OTA server
   std::vector<std::unique_ptr<Message>> OTAManager::processStatusMessage(const Message &message) {
     std::vector<std::unique_ptr<Message>> ret;
     
@@ -332,7 +418,11 @@ namespace iVeiOTA {
           status = 5;
         }
         break;
+      case OTAState::AllDone:         status = 6; break;
+      case OTAState::AllDoneFailed:   status = 6; break;
       }
+
+      uint32_t allPassed = (state == OTAState::AllDone)?1:0;
       
       if(status == 5) {
         // Put which chunk we are processing into the payload
@@ -343,7 +433,7 @@ namespace iVeiOTA {
       } else {
         // Else the payload is empty
         ret.push_back(std::unique_ptr<Message>(new Message(Message::OTAStatus, Message::OTAStatus.UpdateStatus,
-                                                           status, 0, 0, 0)));
+                                                           status, allPassed, 0, 0)));
       }
     }
     break;
@@ -379,7 +469,7 @@ namespace iVeiOTA {
     
     default:
       ret.push_back(Message::MakeNACK(message, 0, "Unknown message subtype"));
-      debug << "Unknown subtype in processStatusMessage" << std::endl;
+      debug << "Unknown subtype in processStatusMessage: " << message.header.subType << std::endl;
     }
     
     return ret;
@@ -393,10 +483,8 @@ namespace iVeiOTA {
       std::string src = config.GetDevice(Container::Active, Partition::BootInfo);
       std::string dest = config.GetDevice(Container::Alternate, Partition::BootInfo);
       debug << "Copying file " << src << " to " << dest << std::endl;
-      uint64_t off = 0;
-      copyFileData(dest, src, off, off);
+      CopyFileData(dest, src, 0, 0, &cancelUpdate);
       
-      sleep(1);
       debug << "Setting alternate validity to false after copying BI partition" << std::endl;
       bootMgr.SetValidity(Container::Alternate, false);
     }
@@ -405,16 +493,14 @@ namespace iVeiOTA {
       debug << "starting to copy Root" << std::endl;
       std::string src = config.GetDevice(Container::Active, Partition::Root);
       std::string dest = config.GetDevice(Container::Alternate, Partition::Root);
-      uint64_t off = 0;
-      copyFileData(dest, src, off, off);
+      CopyFileData(dest, src, 0, 0, &cancelUpdate);
     }
     
     if(copySystem) {
       debug << "starting to copy System" << std::endl;
       std::string src = config.GetDevice(Container::Active, Partition::System);
       std::string dest = config.GetDevice(Container::Alternate, Partition::System);
-      uint64_t off = 0;
-      copyFileData(dest, src, off, off);
+      CopyFileData(dest, src, 0, 0, &cancelUpdate);
     }
     
     // Then we have to clear the cache
@@ -468,12 +554,18 @@ namespace iVeiOTA {
     debug << Debug::Mode::Info << (copySystem ? "" : "Not ") << "Copying System"   << std::endl;    
     bootMgr.SetValidity(Container::Alternate, false);
 
-    return pthread_create(&copyThread, NULL, &CopyThreadFunction, (void*)this) == 0;
-    //copyThread = new std::thread([=]{this->initUpdateFunction(copyBI && !noCopy, copyRoot && !noCopy, copySystem && !noCopy);});
-    //initUpdateFunction(copyBI && !noCopy, copyRoot && !noCopy, copySystem && !noCopy);
-    
+    // We have to make the thread stack size largert
+    size_t stacksize;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_getstacksize(&attr, &stacksize);
+    debug << "Setting stack size: " << pthread_attr_setstacksize(&attr, stacksize * 4) << " ** " << std::endl;
+    pthread_attr_getstacksize(&attr, &stacksize);
+    debug << "Stack size is " << stacksize << std::endl; 
+    int ret = pthread_create(&copyThread, &attr, &CopyThreadFunction, (void*)this);
+
     debug << "Exiting after thread created" << std::endl;
-    return true;
+    return ret == 0;
   }
   
   void OTAManager::processChunk() {
@@ -506,8 +598,7 @@ namespace iVeiOTA {
     } else {
       debug << "Didn't find the chunk: " << whichChunk << std::endl;
     }
-    
-    
+        
     processingChunk = false;
     whichChunk = "";
     intChunkPath = "";    
@@ -535,7 +626,7 @@ namespace iVeiOTA {
       uint64_t offset = chunk.pOffset;
       uint64_t size = chunk.size;
       debug << "Writing image " << path << " to " << dest << " offset: " << offset << " size: " << size << std::endl;
-      uint64_t written = copyFileData(dest, path, offset, size);
+      uint64_t written = CopyFileData(dest, path, offset, size, &cancelUpdate);
       if(written != size) {
         debug << "Didn't write proper amount: " << written << ":" << size << std::endl;
         return false;        
@@ -620,7 +711,7 @@ namespace iVeiOTA {
     return success;
   }
   
-  bool OTAManager::processManifest(const std::string &manifest, std::vector<std::unique_ptr<Message>> &ret) {
+  bool OTAManager::processManifest(const std::string &manifest) {
     // The manifest is a list of chunks in the format
     // ident:type:partition:order:<params_list>:hash_type:hash_value
     // ident is a string identifier
@@ -722,6 +813,7 @@ namespace iVeiOTA {
       }
       
       // If we made it here, then we have a valid chunk
+      debug << "maxIdentLength : " << maxIdentLength << " new ident length: " << chunk.ident.length() << std::endl;
       if(chunk.ident.length() > maxIdentLength) maxIdentLength = chunk.ident.length();
       
       debug << Debug::Mode::Info << "Found chunk: " << chunk.ident << ":" << ToString(chunk.dest) << std::endl;
@@ -740,52 +832,38 @@ namespace iVeiOTA {
     return true;
   }
 
-  uint64_t OTAManager::copyFileData(const std::string &dest, const std::string &src,
-                        uint64_t offset, uint64_t len) {
-    debug << Debug::Mode::Debug << "Made it here" << std::endl;
-    uint64_t totalWritten = 0;
-    bool copyAll = (len == 0);
-    try {
-     debug << Debug::Mode::Debug << "Copying from " << src << " to " << dest << std::endl;
-      // TODO: This seems too easy.  Go back and double check all this
-      int inf = open(src.c_str(), O_RDONLY);
-      int otf = open(dest.c_str(), O_WRONLY);
-      debug << "Seeking" << std::endl;
-      int res = lseek(otf, offset, SEEK_SET);
-
-      debug << "Starting: " << inf << ":" << otf << ":" << res << std::endl;
-      if(inf < 0 || otf < 0 || res < 0) return 0;
-      
-      char buf[1024*1024];
-      uint64_t remaining = len;
-      int printCount = 0;
-      while((copyAll || remaining > 0)) {
-        uint64_t toRead = (uint64_t)1024*1024;
-        if(!copyAll) toRead = std::min(toRead, remaining);
-        
-        size_t bread = read(inf, buf, toRead);
-        size_t wrote = write(otf, buf, bread);
-
-        if(wrote != bread) {
-          debug << "Wrote different value than read" << std::endl;
-          break;
-        }
-        
-        totalWritten += bread;
-        if(!copyAll) remaining -= bread;
-
-        if(bread != toRead || bread == 0) break;
-        if((printCount++ % 100) == 0) {
-          debug << "Copying " << totalWritten << std::endl;
-          printCount = 1;
-        }
-      } // end while
-      close(inf);
-      close(otf);
-    } catch(...) {
-      
-    }
-    debug << "After: " << totalWritten << std::endl;
-    return totalWritten;
+  void OTAManager::Cancel() {
+    cancelUpdate = true;
   }
+  
+  bool OTAManager::Process() {
+    // Do anything that we need to check on periodially
+    if(joinCopyThread && copyThread != -1) {
+      // We need to join the copy thread
+      pthread_join(copyThread, NULL);
+      copyThread = -1;
+      joinCopyThread = false;      
+    }
+
+    if(joinProcessThread && processThread != -1) {
+      // Need to join the process chunk thread
+      pthread_join(processThread, NULL);
+      processThread = -1;
+      joinProcessThread = false;
+
+      // We should check to see if all chunks have been processed now
+      bool allProcessed = true;
+      bool allSucceeded = true;
+      for(auto chunk : chunks) {
+        if(!chunk.processed) allProcessed = false;
+        if(!chunk.succeeded) allSucceeded = false;
+      }
+
+      if(allProcessed && allSucceeded) state = OTAState::AllDone;
+      else if(allProcessed) state = OTAState::AllDoneFailed;
+    }
+    
+    return true;
+  }
+
 };

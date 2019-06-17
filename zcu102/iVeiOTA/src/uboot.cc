@@ -81,13 +81,18 @@ namespace iVeiOTA {
       // This resets the update flag
       if(containerInfo.find(container) != containerInfo.end()) {
         containerInfo[container].updated = message.header.imm[1] == 0 ? false : true;
+        debug << "Updating container " << ToString(container) <<
+          " update success: " << containerInfo[container].updated;
         if(writeContainerInfo(container)) {
+          debug << "Succeeded" << std::endl;
           ret.push_back(Message::MakeACK(message));
         } else {
+          debug << "Failed" << std::endl;
           ret.push_back(Message::MakeNACK(message, 0, "Could not write container info"));
         }
       } else {
-        ret.push_back(Message::MakeNACK(message));
+        debug << "Could not find container" << std::endl;
+        ret.push_back(Message::MakeNACK(message, 0, "Invalid message"));
       }
       break;
       
@@ -95,13 +100,18 @@ namespace iVeiOTA {
       // Sets the boot count back to zero
       if(containerInfo.find(container) != containerInfo.end()) {
         containerInfo[container].tries = 0;
+        debug << "Updating container " << ToString(container) <<
+          " tries: " << containerInfo[container].tries;
         if(writeContainerInfo(container)) {
-          ret.push_back(Message::MakeACK(message));
+          debug << "Succeeded" << std::endl;
+          ret.push_back(Message::MakeACK(message));          
         } else {
+          debug << "Failed" << std::endl;
           ret.push_back(Message::MakeNACK(message, 0, "Could not write container info"));
         }
       } else {
-        ret.push_back(Message::MakeNACK(message));
+        debug << "Failed to find container" << std::endl;
+        ret.push_back(Message::MakeNACK(message, 0, "Invalid message"));
       }
       break;
       

@@ -1,7 +1,6 @@
 #include <iostream>
 #include <signal.h>
 
-#include "container_info.hh"
 #include "iveiota.hh"
 #include "socket_interface.hh"
 
@@ -16,18 +15,20 @@
 
 using namespace iVeiOTA;
 
-// Not thread safe
+// signal handling is not thread safe
 static volatile bool exiting = false;
 static volatile bool brokenPipe = false;
 void signalHandler(int sig) {
   switch(sig) {
   case SIGINT:
-    std::cout << "sigint received: exiting" << std::endl;
+    debug << Debug::Mode::Info << "sigint received: exiting" << std::endl;
     exiting = true;
     break;
-    
+
   case SIGPIPE:
-    std::cout << "sigpipe received: doing nothing" << std::endl;
+    // We get a broken pipe when the client disconnects.  This is expected and we can safely ignnore it
+    //  we do have to close the client socket when it happens though
+    debug << Debug::Mode::Info << "sigpipe received: doing nothing" << std::endl;
     brokenPipe = true;
     break;
   }
@@ -35,8 +36,9 @@ void signalHandler(int sig) {
 
 int main(int argc, char ** argv) {
   debug.SetThreshold(Debug::Mode::Info);
+  debug.SetDefault(Debug::Mode::Debug);  // Default all debug statements to Mode::Debug
 
-  debug << Debug::Mode::Info << "Starting server" << std::endl;
+  debug << Debug::Mode::Info << "Starting OTA server" << std::endl;
   // Register a signal handler so that we can exit gracefully when ctrl-c is pressed
   signal (SIGINT, signalHandler);
   signal (SIGPIPE, signalHandler);
@@ -57,12 +59,13 @@ int main(int argc, char ** argv) {
 
   // Create our listening socket
   SocketInterface server([&uboot, &manager, &server, &initialized](const Message &message) {
-    std::cout << "Message received: " << message.header.toString() << std::endl;
+    debug << "Message received: " << message.header.toString() << std::endl;
     std::vector<std::unique_ptr<Message>> resp;
-    debug << "Got a message " << std::endl;
+
+    // We handle management messages here ourselves
     if(message.header.type == Message::Management &&
        message.header.subType == Message::Management.Initialize) {
-      // Initialize here if needed
+      // Initialize has been called - send back our state and our revision
       initialized = true;
       uint32_t updated = uboot.GetUpdated(Container::Active) ? 1 : 0;
       uint32_t rev =
@@ -72,10 +75,13 @@ int main(int argc, char ** argv) {
       resp.push_back(std::unique_ptr<Message>(new Message(Message::Management, Message::Management.Initialize,
                                                           updated, 0, 0, rev)));
     } else if(!initialized) {
+      // If we haven't been initialized yet, we can't continue
       resp.push_back(Message::MakeNACK(message, 0, "Not yet initialized"));
     } else if(!config.Valid()) {
+      // If this doesn't seem to be a valid system, we always just NACK
       resp.push_back(Message::MakeNACK(message, 0, "System not OTA capable"));
     } else {
+      // Otherwise we pass the message to the appropriate consumer
       switch(message.header.type) {
       case Message::OTAUpdate:
       case Message::OTAStatus:
@@ -93,11 +99,15 @@ int main(int argc, char ** argv) {
       } // end switch
     } // end if(!initialized)
     
-    debug << "Sending " << resp.size() << " messages" << std::endl;
+    debug << "Sending " << resp.size() << " messages as a response" << std::endl;
     if(resp.size() < 1) {
       // We got a message but don't have a response for it
-      debug << "No response to " << (int)message.header.type << ":" << (int)message.header.subType << std::endl;
-      resp.push_back(Message::MakeNACK(message, 0, "No response to this message"));
+      debug << Debug::Mode::Err << "No response to " << (int)message.header.type << ":" << (int)message.header.subType << std::endl;
+      resp.push_back(Message::MakeNACK(message, 0, "Internal Error: No response to this message"));
+    } else if(resp.size() > 1) {
+      // We shouldn't be trying to send more than one message in response anymore
+      //  That was an idea that didn't work so well in practice
+      debug << Debug::Mode::Warn << "More than one response to the message " << (int)message.header.type << ":" << (int)message.header.subType << std::endl;
     }
     for(unsigned int i = 0; i < resp.size(); i++) {
       server.Send(*resp[i]);
@@ -108,12 +118,14 @@ int main(int argc, char ** argv) {
   bool done = false;
   while(!exiting) {
 
-    // Check to see if we have been signaled to stop
+    // Check to see if we have been signaled to stop, and if so kill the manager and the server
     if(exiting && !done) {
       server.Stop();
+      manager.Cancel();
       done = true;
     }
 
+    // If the client disconnected, we have to close the client connection
     if(brokenPipe) {
       server.CloseConnection();
       brokenPipe = false;
@@ -122,6 +134,10 @@ int main(int argc, char ** argv) {
     // Process any data we need to from the server
     if(!server.Process()) {
       break;
+    }
+
+    if(!manager.Process()) {
+      // What to do here?
     }
 
     // TODO: Implement a timeout here so that if we are killed but the sockets dont close

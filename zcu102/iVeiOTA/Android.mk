@@ -6,7 +6,6 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := \
 	server.cc \
 	src/message.cc \
-	src/container_info.cc \
 	src/ota_manager.cc \
 	src/socket_interface.cc \
 	src/uboot.cc \
@@ -63,7 +62,6 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := \
 	client.cc \
 	src/message.cc \
-	src/container_info.cc \
 	src/ota_manager.cc \
 	src/socket_interface.cc \
 	src/uboot.cc \
