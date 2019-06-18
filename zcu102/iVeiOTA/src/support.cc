@@ -130,10 +130,12 @@ namespace iVeiOTA {
     return totalWritten;
   }
 
-  bool dirExists(std::string dir_path) {
+  bool IsDir(std::string dir_path) {
     struct stat ss;
-    
-    if (stat(dir_path.c_str(), &ss) == 0 && S_ISDIR(ss.st_mode)) {
+
+    // stat returns info about the endpoint of a symlink
+    //  use lstat here so that we don't follow symlinks
+    if (lstat(dir_path.c_str(), &ss) == 0 && S_ISDIR(ss.st_mode)) {
       return true;
     } else {
       return false;
@@ -155,12 +157,13 @@ namespace iVeiOTA {
       sprintf(filepath, "%s/%s", path.c_str(), next_file->d_name);
       
       //we don't want to process the pointer to "this" or "parent" directory
-      if ((strcmp(next_file->d_name,"..") == 0) || (strcmp(next_file->d_name,"." ) == 0) ) {
+      if ((strcmp(next_file->d_name,"..") == 0) ||
+          (strcmp(next_file->d_name,"." ) == 0) ) {
         continue;
       }
       
-      //dirExists will check if the "filepath" is a directory
-      if (dirExists(filepath)) {
+      // IsDir will check if the "filepath" is a directory
+      if (IsDir(filepath)) {
         if (!recursive) {
           //if we aren't recursively deleting in subfolders, skip this dir
           continue;
@@ -175,7 +178,7 @@ namespace iVeiOTA {
       }
       
       ret_val = remove(filepath);
-      //ENOENT occurs when i folder is empty, or is a dangling link, in
+      //ENOENT occurs when the folder is empty, or is a dangling link, in
       //which case we will say it was a success because the file is gone
       if (ret_val != 0 && ret_val != ENOENT) {
         closedir(theFolder);
