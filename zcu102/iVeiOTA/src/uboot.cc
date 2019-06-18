@@ -10,28 +10,31 @@
 
 namespace iVeiOTA {
   UBootManager::UBootManager() {
+    // Read the information from both the containers and print it out
     readContainerInfo(Container::Active);
     readContainerInfo(Container::Alternate);
 
-    debug <<
-      "Active container info -- " << std::endl << 
+    debug << Debug::Mode::Info <<
+      "Active container info -- " << std::endl << Debug::Mode::Info << 
       " \tTries: "   << containerInfo[Container::Active].tries <<
       " \tRev: "     << containerInfo[Container::Active].rev <<
       " \tValid: "   << containerInfo[Container::Active].valid <<
       " \tUpdated: " << containerInfo[Container::Active].updated << std::endl;
-    debug <<
-      "Alternate container info -- " << std::endl << 
+    debug << Debug::Mode::Info <<
+      "Alternate container info -- " << std::endl << Debug::Mode::Info <<
       " \tTries: "   << containerInfo[Container::Alternate].tries <<
       " \tRev: "     << containerInfo[Container::Alternate].rev <<
       " \tValid: "   << containerInfo[Container::Alternate].valid <<
       " \tUpdated: " << containerInfo[Container::Alternate].updated << std::endl;
   }
-  
+
+  // Process a command from the network server
   std::vector<std::unique_ptr<Message>> UBootManager::ProcessCommand(const Message &message) {
-    std::vector<std::unique_ptr<Message>> ret;
-    
+    std::vector<std::unique_ptr<Message>> ret;    
     if(message.header.type != Message::BootManagement) return ret;
-    
+
+    // The boot management only operates on containers, as we are essentially
+    //  setting the information 
     Container container = 
       (message.header.imm[0] == 1) ? (Container::Active) : 
       (message.header.imm[0] == 2) ? (Container::Alternate) :

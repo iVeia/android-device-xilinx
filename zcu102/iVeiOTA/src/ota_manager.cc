@@ -77,6 +77,7 @@ namespace iVeiOTA {
     
     //TODO: Delete the journal if it is there
     if(manifestValid) {
+      state = OTAState::UpdateAvailable;
       // There was, what appears to be, a valid cached manifest from a previous update
       //  So look to see if there is a cached journal so we can try and continue from
       //  where we left off
@@ -93,16 +94,20 @@ namespace iVeiOTA {
         //  We don't need to keep not processed information, because things only go
         //  into the journal when they are processed
         while(std::getline(journal, line)) {
-          std::vector<std::string> toks = Split(line, ":");
-          if(toks.size() < 2) continue;
-          for(auto chunk : chunks) {
-            if(chunk.ident == toks[0]) {
-              if(toks[1] == "1") {
-                chunk.processed = true;
-                chunk.succeeded = true;
-              } else {
-                chunk.processed = true;
-                chunk.succeeded = false;
+          if(line.find("init_success")!= std::string::npos) {
+            cachedInitComplete = true;
+          } else {
+            std::vector<std::string> toks = Split(line, ":");
+            if(toks.size() < 2) continue;
+            for(auto chunk : chunks) {
+              if(chunk.ident == toks[0]) {
+                if(toks[1] == "1") {
+                  chunk.processed = true;
+                  chunk.succeeded = true;
+                } else {
+                  chunk.processed = true;
+                  chunk.succeeded = false;
+                }
               }
             }
           }
@@ -222,8 +227,13 @@ namespace iVeiOTA {
     // ****************************************************************************** //
     case Message::OTAUpdate.ContinueUpdate:
     {
-      debug << "Attempting to continue update" << std::endl;
-      ret.push_back(Message::MakeNACK(message, 0, "Continue not yet supported"));
+      if(state != UpdateAvailable) {
+        ret.push_back(Message::MakeNACK(message, 0, "No update to continue"));
+      } else {
+        // There is an update to continue
+        // TODO: Need to determine if we finished initialization
+        ret.push_back(Message::MakeNACK(message, 0, "Continue not supported yet"));
+      }
     }
     break;
 
@@ -517,7 +527,16 @@ namespace iVeiOTA {
         }
       }// unmount
     }
-    
+
+    // Save the fact that we finised initialization off to the journal
+    try {
+      debug << "Init succeeded: " std::endl;
+      std::ofstream journal(std::string(IVEIOTA_CACHE_LOCATION) + "/journal", std::ios::out | std::ios::app);
+      journal << "init_success" << std::endl;;
+    } catch(...) {
+      //TODO: Implement logging
+      // Failed to write to the journal -- can't resume a failed update
+    }
     debug << "Thread finished" << std::endl;
   }
   
@@ -588,7 +607,7 @@ namespace iVeiOTA {
       try {
         debug << "Succeeded in processing chunk: " << chunk->ident << std::endl;
         std::ofstream journal(std::string(IVEIOTA_CACHE_LOCATION) + "/journal", std::ios::out | std::ios::app);
-        journal << chunk->ident << ":" << (success ? "1" : "2");
+        journal << chunk->ident << ":" << (success ? "1" : "2") << std::endl;
       } catch(...) {
         //TODO: Implement logging
         // Failed to write to the journal -- can't resume a failed update
@@ -892,5 +911,4 @@ namespace iVeiOTA {
     
     return true;
   }
-
 };

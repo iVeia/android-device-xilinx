@@ -12,6 +12,10 @@
 #include "support.hh"
 #include "uboot.hh"
 
+// TODO: This class has gotten too large.  Just for maintence purposes
+//       I should look into splitting off some functionality, like chunk
+//       processing maybe
+
 namespace iVeiOTA {
   class OTAManager {
   protected:
@@ -102,6 +106,8 @@ namespace iVeiOTA {
 
     // For handling the canceling of an update
     bool cancelUpdate;    // True if we are trying to cancel the update
+
+    bool cachedInitCompleted; // True if the last update we attempted completed initialization
     
   public:
 
