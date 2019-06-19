@@ -12,7 +12,6 @@ FILES=(
     fsbl.bin
     mksdcard.sh
     boot
-    modules
     root
     system.img
     )

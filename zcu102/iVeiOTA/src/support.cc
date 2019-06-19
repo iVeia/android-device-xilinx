@@ -142,11 +142,23 @@ namespace iVeiOTA {
     }
   }
 
+  int RemoveFile(const std::string &path) {
+    debug << Debug::Mode::Debug << "Trying to remove " << path << std::endl;
+    // Just try and remove it
+    if(remove(path.c_str()) < 0) return errno;
+    else return 0;
+  }
+  
   int RemoveAllFiles(const std::string &path, bool recursive) {
     if (path.empty()) return 0;
 
+    debug << Debug::Mode::Debug << "Trying to remove all files in " << path << std::endl;
+        
     DIR *theFolder = opendir(path.c_str());
     struct dirent *next_file;
+
+    // TODO: Go through and replace this with std::string so there isn't a limit on
+    //       path length
     char filepath[1024];
     int ret_val;
 
@@ -172,17 +184,21 @@ namespace iVeiOTA {
         ret_val = RemoveAllFiles(filepath, recursive);
         
         if (ret_val != 0) {
-          closedir(theFolder);
-          return ret_val;
+          // Don't stop if we can't delete a folder.  Just keep deleting as
+          //  much as we can
+          //closedir(theFolder);
+          //return ret_val;
         }
       }
-      
+
+      // remove the file
+      // TODO: Double check this w.r.t return value and errno - it doesn't look right
       ret_val = remove(filepath);
-      //ENOENT occurs when the folder is empty, or is a dangling link, in
-      //which case we will say it was a success because the file is gone
+
+      // If we can't remove a file, just continue and hope it won't mess anything else up
+      //  try to remove all we can
       if (ret_val != 0 && ret_val != ENOENT) {
-        closedir(theFolder);
-        return ret_val;
+        debug << Debug::Mode::Err << "Could not remove " << filepath << ".  Continuing" << std::endl;
       }      
     }
     
@@ -236,11 +252,18 @@ namespace iVeiOTA {
         return ret;
     }
 
+  // TODO: It is a known issue that this parser will fail if there are differences
+  //        in trailing / characters.  i.e. It thinks /mnt/data and /mnt/data/ are different
+  //       They are actually different though, so what should be done about it is questionable
   std::string Mount::Mounted(const std::string &name, bool dev) {
     // Get the list of mounted filesystems
     std::stringstream ss;
     {
       std::ifstream input("/proc/mounts");
+      if(!input.good()) {
+        debug << Debug::Mode::Failure << "Failed to read mount information" << std::endl;
+        return "";
+      }
       ss << input.rdbuf();
     }
     

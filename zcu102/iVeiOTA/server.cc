@@ -35,7 +35,7 @@ void signalHandler(int sig) {
 }
 
 int main(int argc, char ** argv) {
-  debug.SetThreshold(Debug::Mode::Info);
+  debug.SetThreshold(Debug::Mode::Info); // Don't print out debugging information by default
   debug.SetDefault(Debug::Mode::Debug);  // Default all debug statements to Mode::Debug
 
   debug << Debug::Mode::Info << "Starting OTA server" << std::endl;
@@ -47,15 +47,28 @@ int main(int argc, char ** argv) {
   bool simulate = false;
   for(int i = 1; i < argc; i++) {
     if(std::string(argv[i]) == "-s") simulate = true;
+    
+    else if(std::string(argv[i]) == "-d") debug.SetThreshold(Debug::Mode::Debug);
+    else if(std::string(argv[i]) == "-q") debug.SetThreshold(Debug::Mode::Warn);
   }
 
   // Read our configuration file
   config.Init();
 
+  // Create our cache location
+  // TODO: Would like a better method than just calling out to the shell
+  // TODO: Should make sure this works and isn't a non-directory file or something
+  RunCommand(std::string("mkdir -p ") + IVEIOTA_CACHE_LOCATION);
+
   // Create an interface to the uboot env processing
   UBootManager uboot;
   OTAManager   manager(uboot);
   bool initialized = false;
+
+  debug << Debug::Mode::Debug << "Debug statements visible" << std::endl;
+  debug << Debug::Mode::Info  << "Info  statements visible" << std::endl;
+  debug << Debug::Mode::Warn  << "Warn  statements visible" << std::endl;
+  debug << Debug::Mode::Err   << "Error statements visible" << std::endl;
 
   // Create our listening socket
   SocketInterface server([&uboot, &manager, &server, &initialized](const Message &message) {

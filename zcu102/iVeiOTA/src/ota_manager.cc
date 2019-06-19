@@ -64,8 +64,9 @@ namespace iVeiOTA {
       std::ifstream manifest_cache(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
       std::stringstream ss;
       ss << manifest_cache.rdbuf();
-      
-      if(ss.str().length() > 0) {
+
+      // TODO: Think more about the 10K manifest size limit
+      if(ss.str().length() > 0 && ss.str().length() < 1024*10) {
         debug << Debug::Mode::Info << "Cached manifest seems to be valid...  processing" << std::endl;
         manifestValid = processManifest(ss.str());
       }
@@ -73,15 +74,14 @@ namespace iVeiOTA {
       // There was no cached manifest, so if there is a journal we should delete it
       //  but that will happen after this
       manifestValid = false;
+      RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
     }
     
-    //TODO: Delete the journal if it is there
     if(manifestValid) {
       state = OTAState::UpdateAvailable;
       // There was, what appears to be, a valid cached manifest from a previous update
       //  So look to see if there is a cached journal so we can try and continue from
       //  where we left off
-      //TODO: set the state to indicate there is a cached update available when that is working
       try {
         std::ifstream journal(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
         std::string line;
@@ -95,20 +95,31 @@ namespace iVeiOTA {
         //  into the journal when they are processed
         while(std::getline(journal, line)) {
           if(line.find("init_success")!= std::string::npos) {
-            cachedInitComplete = true;
+            debug << Debug::Mode::Debug << " c> Cached init successful" << std::endl;
+            cachedInitCompleted = true;
           } else {
             std::vector<std::string> toks = Split(line, ":");
             if(toks.size() < 2) continue;
-            for(auto chunk : chunks) {
-              if(chunk.ident == toks[0]) {
-                if(toks[1] == "1") {
-                  chunk.processed = true;
-                  chunk.succeeded = true;
-                } else {
-                  chunk.processed = true;
-                  chunk.succeeded = false;
-                }
+
+            // Check to see if this journaled chunk was in the cached manifest
+            auto chunk = std::find_if(chunks.begin(), chunks.end(),
+                                      [&toks](const ChunkInfo &x) { return x.ident == toks[0];});
+            if(chunk != chunks.end()) {
+              // It was in the manifest
+              if(toks[1] == "1") {
+                chunk->processed = true;
+                chunk->succeeded = true;
+              } else {
+                chunk->processed = true;
+                chunk->succeeded = false;
               }
+            } else {
+              // We have a chunk in the journal that isn't in the manifest
+              //  This is an error so we cannot continue a previous update
+              state = OTAState::Idle;
+              chunks.clear();
+              RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
+              RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
             }
           }
         }
@@ -192,7 +203,10 @@ namespace iVeiOTA {
         }
         
         // If we managed to make a manifest out of that, then process it
-        if(manifest.length() > 0) {
+        // TODO: Think more about this
+        // If a manifest is larger than 10K bytes, assume it is not correct
+        if(manifest.length() > 0 &&
+           manifest.length() < 1024*10) {
           if(processManifest(manifest)) {
             // If we are here, then we have a proper manifest and can continue with the update
           
@@ -203,18 +217,18 @@ namespace iVeiOTA {
               ret.push_back(Message::MakeACK(message));
             } else {
               // Failed to prepare for update
-              debug << "state -> idle" << std::endl;
+              debug << "Failed to prepare: state -> idle" << std::endl;
               state = OTAState::Idle;
               ret.push_back(Message::MakeNACK(message, 0, "Failed to prepare for update"));
             }
           } else {
             // Failed to process the manifest
-            debug << "state -> idle" << std::endl;
+            debug << "Manifest invalid: state -> idle" << std::endl;
             state = OTAState::Idle;
             ret.push_back(Message::MakeNACK(message, 0, "Failed to process manifest"));
           } 
         } else {
-          debug << "state -> idle" << std::endl;
+          debug << "Manifest invalid: state -> idle" << std::endl;
           state = OTAState::Idle;
           ret.push_back(Message::MakeNACK(message, 0, "Could not read manifest"));
         }
@@ -227,12 +241,18 @@ namespace iVeiOTA {
     // ****************************************************************************** //
     case Message::OTAUpdate.ContinueUpdate:
     {
-      if(state != UpdateAvailable) {
+      if(state != OTAState::UpdateAvailable) {
         ret.push_back(Message::MakeNACK(message, 0, "No update to continue"));
       } else {
         // There is an update to continue
-        // TODO: Need to determine if we finished initialization
-        ret.push_back(Message::MakeNACK(message, 0, "Continue not supported yet"));
+        int completed = 0;
+        for(auto chunk : chunks) { if(chunk.processed == true) completed++; }
+        debug << Debug::Mode::Info << "Continuing an update with " << completed << " chunks completed" << std::endl;
+        if(prepareForUpdate(completed > 0)) {
+          ret.push_back(Message::MakeACK(message));
+        } else {
+          ret.push_back(Message::MakeNACK(message, 0, "Failed to continue update"));
+        }
       }
     }
     break;
@@ -379,9 +399,15 @@ namespace iVeiOTA {
         bootMgr.SetTries(Container::Alternate, 0);
         bootMgr.SetValidity(Container::Alternate, true);
         bootMgr.SetUpdated(Container::Alternate, true);
-        
-        // TODO: delete the journal and cached manifest
-        
+
+        // Remove the cached manifest and journal so we don't accidentally resume them
+        RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
+        RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
+
+        // Move back to the idle state
+        state = OTAState::Idle;
+
+        // And send a positive response back
         ret.push_back(Message::MakeACK(message));
       }
     }
@@ -485,7 +511,9 @@ namespace iVeiOTA {
   
   void OTAManager::initUpdateFunction() {
     debug << "Download thread starting" << std::endl;
-    //TODO: This won't really work as it creates a power-cycle race condition
+    //TODO: This may be dangerous as it creates a power-cycle race condition
+    //      If you power cycle ater copying but before setting validity then you may
+    //        power back up into the backup container.
     if(copyBI) {
       debug << "starting to copy BI" << std::endl;
       std::string src = config.GetDevice(Container::Active, Partition::BootInfo);
@@ -530,7 +558,7 @@ namespace iVeiOTA {
 
     // Save the fact that we finised initialization off to the journal
     try {
-      debug << "Init succeeded: " std::endl;
+      debug << "Init succeeded: " << std::endl;
       std::ofstream journal(std::string(IVEIOTA_CACHE_LOCATION) + "/journal", std::ios::out | std::ios::app);
       journal << "init_success" << std::endl;;
     } catch(...) {
@@ -550,6 +578,7 @@ namespace iVeiOTA {
     copyBI     = true;
     copyRoot   = true;
     copySystem = true;
+    
     for(auto chunk: chunks) {
       bool copy = true;
       if(chunk.type == ChunkType::Image) {
@@ -558,7 +587,7 @@ namespace iVeiOTA {
         copy = false;
       }
 
-      if(!copy) {
+      if(!copy || noCopy) {
         if(     chunk.dest == Partition::BootInfo) copyBI     = false;
         else if(chunk.dest == Partition::Root)     copyRoot   = false;
         else if(chunk.dest == Partition::System)   copySystem = false;
@@ -570,6 +599,7 @@ namespace iVeiOTA {
     debug << Debug::Mode::Info << (copySystem ? "" : "Not ") << "Copying System"   << std::endl;    
     bootMgr.SetValidity(Container::Alternate, false);
 
+    // -------------------------------------------------------------------------------------------------------
     // We have to make the thread stack size larger.  See the comment for processChunk for more details
     size_t stacksize;
     pthread_attr_t attr;
@@ -582,6 +612,8 @@ namespace iVeiOTA {
     if(ret != 0) {
       debug << Debug::Mode::Failure << "Could not create chunk process thread" << std::endl;
     }
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////
+    
     debug << "Exiting after thread created" << std::endl;
     return ret == 0;
   }
@@ -762,10 +794,11 @@ namespace iVeiOTA {
     debug << Debug::Mode::Info << "Processing manifest" << std::endl;
     std::vector<std::string> lines = Split(manifest, "\r\n");
     for(std::string line : lines) {
+      // TODO: put these hard coded restrictions someplace more visible
+      // ~1500 charactes for a path seem like a reasonable limit
+      if(line.length() > 2048) continue;
       std::vector<std::string> toks = Split(line, ":");
       if(toks.size() < 6) {
-        debug << "  > " << line << std::endl;
-        // This isn't a valid chunk
         continue;
       }
       ChunkInfo chunk;
@@ -792,7 +825,7 @@ namespace iVeiOTA {
       
       // Check to see if we have a specific order we have to process this chunk in
       // TODO: proper handling of this needs to be implemented
-      chunk.orderMatters = (toks[3][0] == '1' || toks[3] == "true" || toks[3] == "True" || toks[3] == "TRUE") ? true : false;
+      chunk.orderMatters = (toks[3].length() > 0 && toks[3][0] == '1') ? true : false;
       
       // Get the hash information
       chunk.hashType = GetHashAlgorithm(toks[toks.size() - 2]);
@@ -813,7 +846,7 @@ namespace iVeiOTA {
         break;
 
       case ChunkType::Archive:
-        chunk.complete = toks[4][0] == '1';
+        chunk.complete = ((toks[4].length() > 0) && (toks[4][0] == '1'));
         break;
         
       case ChunkType::Dummy:
@@ -840,6 +873,12 @@ namespace iVeiOTA {
       debug << Debug::Mode::Info << "Found chunk: " << chunk.ident << ":" << iVeiOTA::ToString(chunk.dest) << std::endl;
       chunks.push_back(chunk);
     } // end for(line : lines)
+
+    if(chunks.size() <= 0) {
+      // This doesn't seem like a valid manifest since there are no chunks in it
+      debug << Debug::Mode::Err << "Invalid manifest" << std::endl;
+      return false;
+    }
     
     // This seems to be a valid manifest, so we should save it to the cache
     try {
@@ -903,9 +942,15 @@ namespace iVeiOTA {
        (!joinProcessThread && processThread == -1) &&
        (!joinCopyThread && copyThread == -1)
       ) {
+      debug << Debug::Mode::Debug << "Update cancel completed. Updating status to reflect" << std::endl;
       cancelUpdate = false;
       chunks.clear();
       maxIdentLength = 0;
+
+      // We have to remove any cached files too
+      RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
+      RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
+      
       state = OTAState::Idle;
     }
     
