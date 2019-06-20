@@ -65,9 +65,7 @@ PRODUCT_COPY_FILES += \
 	device/xilinx/zcu102/iVeiOTA/test/sample_manifest:root/ota_tmp/sample_manifest \
 	device/xilinx/zcu102/iVeiOTA/config/uEnv.txt:boot/uEnv.txt \
 	device/xilinx/zcu102/iVeiOTA/config/AB.img:boot/AB.img \
-	device/xilinx/zcu102/iVeiOTA/config/uEnvAB.txt:bi/uEnvAB.txt \
-	device/xilinx/zcu102/iVeiOTA/config/ident:system/iVeiOTA_ident \
-	device/xilinx/zcu102/iVeiOTA/config/ident:root/iVeiOTA_ident
+	device/xilinx/zcu102/iVeiOTA/config/uEnvAB.txt:bi/uEnvAB.txt
 
 
 # Add tinyalsa

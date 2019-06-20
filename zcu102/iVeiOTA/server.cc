@@ -59,6 +59,7 @@ int main(int argc, char ** argv) {
   // TODO: Would like a better method than just calling out to the shell
   // TODO: Should make sure this works and isn't a non-directory file or something
   RunCommand(std::string("mkdir -p ") + IVEIOTA_CACHE_LOCATION);
+  RunCommand(std::string("mkdir -p ") + IVEIOTA_MNT_POINT);
 
   // Create an interface to the uboot env processing
   UBootManager uboot;

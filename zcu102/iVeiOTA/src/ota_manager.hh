@@ -103,11 +103,14 @@ namespace iVeiOTA {
     bool copyBI;          // True if we need to copy the BootInfo partition during initialization
     bool copyRoot;        // True if we need to copy the Root partition during initialization
     bool copySystem;      // True if we need to copy the System partition during initialization
+    bool clearCache;      // True if we need to clear the cache
 
     // For handling the canceling of an update
     bool cancelUpdate;    // True if we are trying to cancel the update
 
-    bool cachedInitCompleted; // True if the last update we attempted completed initialization
+    // For handling container switching
+    bool singleContainerOnly;  // If all chunks are going onto a single container
+                               //  then there is no reason for us to switch containers
     
   public:
 

@@ -74,7 +74,9 @@ namespace iVeiOTA {
       // There was no cached manifest, so if there is a journal we should delete it
       //  but that will happen after this
       manifestValid = false;
+      RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
       RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
+      RunCommand("sync"); // We also have to sync the filesystem so we can reboot
     }
     
     if(manifestValid) {
@@ -96,7 +98,6 @@ namespace iVeiOTA {
         while(std::getline(journal, line)) {
           if(line.find("init_success")!= std::string::npos) {
             debug << Debug::Mode::Debug << " c> Cached init successful" << std::endl;
-            cachedInitCompleted = true;
           } else {
             std::vector<std::string> toks = Split(line, ":");
             if(toks.size() < 2) continue;
@@ -115,11 +116,13 @@ namespace iVeiOTA {
               }
             } else {
               // We have a chunk in the journal that isn't in the manifest
-              //  This is an error so we cannot continue a previous update
+              //  This is an error so we cannot continue the previous update
               state = OTAState::Idle;
               chunks.clear();
               RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
               RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
+              RunCommand("sync"); // We also have to sync the filesystem so we can reboot
+              break;
             }
           }
         }
@@ -393,16 +396,20 @@ namespace iVeiOTA {
         } // end switch(state)
       } else {
         // TODO: This mounts/remount 4 times -- need to do better at some point
-        int currentRev = bootMgr.GetRev(Container::Active);
-        debug << "Setting alternate rev to " << currentRev + 1 << std::endl;
-        bootMgr.SetRev(Container::Alternate, currentRev + 1);
-        bootMgr.SetTries(Container::Alternate, 0);
-        bootMgr.SetValidity(Container::Alternate, true);
-        bootMgr.SetUpdated(Container::Alternate, true);
-
+        if(singleContainerOnly) {
+          debug << Debug::Mode::Info << "Skipping container switching as this is a single partition download" << std::endl;
+        } else {
+          int currentRev = bootMgr.GetRev(Container::Active);
+          debug << "Setting alternate rev to " << currentRev + 1 << std::endl;
+          bootMgr.SetRev(Container::Alternate, currentRev + 1);
+          bootMgr.SetTries(Container::Alternate, 0);
+          bootMgr.SetValidity(Container::Alternate, true);
+          bootMgr.SetUpdated(Container::Alternate, true);
+        }
         // Remove the cached manifest and journal so we don't accidentally resume them
         RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
         RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
+        RunCommand("sync"); // We also have to sync the filesystem so we can reboot
 
         // Move back to the idle state
         state = OTAState::Idle;
@@ -540,7 +547,7 @@ namespace iVeiOTA {
     }
     
     // Then we have to clear the cache
-    {
+    if(clearCache) {
       debug << "clearing the cache" << std::endl;
       std::string cache = config.GetDevice(Container::Alternate, Partition::Cache);
       if(cache.length() > 1) {
@@ -560,6 +567,7 @@ namespace iVeiOTA {
     try {
       debug << "Init succeeded: " << std::endl;
       std::ofstream journal(std::string(IVEIOTA_CACHE_LOCATION) + "/journal", std::ios::out | std::ios::app);
+      RunCommand("sync"); // We also have to sync the filesystem so we can reboot
       journal << "init_success" << std::endl;;
     } catch(...) {
       //TODO: Implement logging
@@ -578,7 +586,36 @@ namespace iVeiOTA {
     copyBI     = true;
     copyRoot   = true;
     copySystem = true;
-    
+    clearCache = true;
+
+    // First check to see if all chunks are in a single container
+    bool singleOnly = true;
+    unsigned int singleCount = 0;
+    for(auto chunk : chunks) {
+      if(config.IsSinglePartition(chunk.dest)) {
+        singleCount++;
+      } else {
+        singleOnly = false;
+      }
+    }
+
+    if(singleCount == chunks.size()) {
+      debug << "Single count = chunks.size() = " << singleCount << std::endl;
+    }
+
+    if(singleOnly) {
+      debug << "singleOnly was true" << std::endl;
+    }
+
+    if(singleOnly && (singleCount == chunks.size())) {
+      debug << Debug::Mode::Info << "All chunks are on single partitions, no need to switch" << std::endl;
+      singleContainerOnly = true;
+      clearCache = false;
+    } else {
+      singleContainerOnly = false;
+      clearCache = true;
+    }
+        
     for(auto chunk: chunks) {
       bool copy = true;
       if(chunk.type == ChunkType::Image) {
@@ -587,7 +624,7 @@ namespace iVeiOTA {
         copy = false;
       }
 
-      if(!copy || noCopy) {
+      if(!copy || noCopy || singleContainerOnly) {
         if(     chunk.dest == Partition::BootInfo) copyBI     = false;
         else if(chunk.dest == Partition::Root)     copyRoot   = false;
         else if(chunk.dest == Partition::System)   copySystem = false;
@@ -597,6 +634,7 @@ namespace iVeiOTA {
     debug << Debug::Mode::Info << (copyBI     ? "" : "Not ") << "Copying BootInfo" << std::endl;
     debug << Debug::Mode::Info << (copyRoot   ? "" : "Not ") << "Copying Root"     << std::endl;
     debug << Debug::Mode::Info << (copySystem ? "" : "Not ") << "Copying System"   << std::endl;    
+    debug << Debug::Mode::Info << (clearCache ? "" : "Not ") << "Clearing Cache"   << std::endl;    
     bootMgr.SetValidity(Container::Alternate, false);
 
     // -------------------------------------------------------------------------------------------------------
@@ -639,6 +677,7 @@ namespace iVeiOTA {
       try {
         debug << "Succeeded in processing chunk: " << chunk->ident << std::endl;
         std::ofstream journal(std::string(IVEIOTA_CACHE_LOCATION) + "/journal", std::ios::out | std::ios::app);
+        RunCommand("sync"); // We also have to sync the filesystem so we can reboot
         journal << chunk->ident << ":" << (success ? "1" : "2") << std::endl;
       } catch(...) {
         //TODO: Implement logging
@@ -907,7 +946,12 @@ namespace iVeiOTA {
       joinCopyThread = false;
       
       if(!cancelUpdate) {
-        state = OTAState::InitDone;
+        bool allDone = true;
+        for(auto chunk : chunks) {
+          if(chunk.processed == false) allDone = false;
+        }
+        if(allDone) state = OTAState::AllDone;
+        else        state = OTAState::InitDone;
       }
     }
 
@@ -950,6 +994,7 @@ namespace iVeiOTA {
       // We have to remove any cached files too
       RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
       RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
+      RunCommand("sync"); // We also have to sync the filesystem so we can reboot
       
       state = OTAState::Idle;
     }

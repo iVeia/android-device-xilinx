@@ -170,6 +170,17 @@ namespace iVeiOTA {
     }
   }
 
+  bool GlobalConfig::IsSinglePartition(Partition part) {
+    if(partitions.find(Container::Single) != partitions.end() &&
+       partitions[Container::Single].find(part) != partitions[Container::Single].end()) {
+      debug << Debug::Mode::Debug << "Partition is single: " << ToString(part) << std::endl;
+      return true;
+    } else {
+      debug << Debug::Mode::Debug << "Partition is not single: " << ToString(part) << std::endl;
+      return false;
+    }
+  }
+
   // Get the device name of a container/partition combo
   // This comes from the command line and the config file together
   std::string GlobalConfig::GetDevice(Container container, Partition part) {
