@@ -147,7 +147,7 @@ echo "========= populating SYSTEM partition"
 if [ -e ${diskname}${prefix}5 ]; then
 	dd if=/root/system.img of=${diskname}${prefix}5
 	e2label ${diskname}${prefix}5 SYSTEM
-	e2fsck -f ${diskname}${prefix}5
+	e2fsck -y -f ${diskname}${prefix}5
     mkdir -p /tmp/sys_part
     mount -t ext4 ${diskname}${prefix}5 /tmp/sys_part
     cp -r /root/modules /tmp/sys_part/lib/
