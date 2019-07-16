@@ -152,6 +152,16 @@ namespace iVeiOTA {
     }
   }
 
+  void UBootManager::SetAll(Container container, bool valid, bool updated, int tries, int rev) {
+    if(containerInfo.find(container) != containerInfo.end()) {
+      containerInfo[container].valid   = valid;
+      containerInfo[container].updated = updated;
+      containerInfo[container].tries   = tries;
+      containerInfo[container].rev     = rev;
+      writeContainerInfo(container);
+    }
+  }
+
   int UBootManager::GetRev(Container container) {
     if(containerInfo.find(container) != containerInfo.end()) {
       return containerInfo[container].rev;

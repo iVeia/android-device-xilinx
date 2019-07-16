@@ -72,7 +72,6 @@ namespace iVeiOTA {
       }
     } catch(...) {
       // There was no cached manifest, so if there is a journal we should delete it
-      //  but that will happen after this
       manifestValid = false;
       RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
       RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
@@ -128,6 +127,7 @@ namespace iVeiOTA {
         }
       } catch(...) {
         // There was no journal but that's fine - we just start from the beginning
+        state = OTAState::Idle;
       }
     }
   }
@@ -395,17 +395,20 @@ namespace iVeiOTA {
           ret.push_back(Message::MakeNACK(message, 0, "Internal error"));
         } // end switch(state)
       } else {
-        // TODO: This mounts/remount 4 times -- need to do better at some point
         if(singleContainerOnly) {
           debug << Debug::Mode::Info << "Skipping container switching as this is a single partition download" << std::endl;
         } else {
           int currentRev = bootMgr.GetRev(Container::Active);
           debug << "Setting alternate rev to " << currentRev + 1 << std::endl;
-          bootMgr.SetRev(Container::Alternate, currentRev + 1);
-          bootMgr.SetTries(Container::Alternate, 0);
-          bootMgr.SetValidity(Container::Alternate, true);
-          bootMgr.SetUpdated(Container::Alternate, true);
+          bootMgr.SetAll(Container::Alternate, true, true, 0, currentRev + 1);
         }
+
+        // We have to clear out our list of chunks so that we can do another udpate if we want to
+        chunks.clear();
+
+        // Clear out some internal convenience state
+        maxIdentLength = 0;
+
         // Remove the cached manifest and journal so we don't accidentally resume them
         RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
         RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
@@ -600,7 +603,7 @@ namespace iVeiOTA {
     }
 
     if(singleCount == chunks.size()) {
-      debug << "Single count = chunks.size() = " << singleCount << std::endl;
+      debug << "Single count == chunks.size() = " << singleCount << std::endl;
     }
 
     if(singleOnly) {
@@ -615,7 +618,7 @@ namespace iVeiOTA {
       singleContainerOnly = false;
       clearCache = true;
     }
-        
+ 
     for(auto chunk: chunks) {
       bool copy = true;
       if(chunk.type == ChunkType::Image) {
@@ -730,9 +733,10 @@ namespace iVeiOTA {
     case ChunkType::Archive:
     {
       std::string dest = config.GetDevice(Container::Alternate, chunk.dest);
+      std::string ftype = config.GetFilesystemType(dest);
 
       {
-        Mount mount(dest, IVEIOTA_MNT_POINT);
+        Mount mount(dest, IVEIOTA_MNT_POINT, ftype);
         if(!mount.IsMounted()) {
           debug << "Failed to mount device" << std::endl;
           success = false;
@@ -745,9 +749,12 @@ namespace iVeiOTA {
           RemoveAllFiles(mount.Path() + "/", true);
         }
       } // unmount and sync filesystem -- not waiting here caused tar to fail
-      sleep(10);
+      
+      // TODO: Verify that the sleep and unmount/mount is needed.  May be an artifact of previous problem
+      sleep(2);
+      
       {
-        Mount mount(dest, IVEIOTA_MNT_POINT);
+        Mount mount(dest, IVEIOTA_MNT_POINT, ftype);
         if(!mount.IsMounted()) {
           debug << "Failed to mount device second time" << std::endl;
           success = false;
@@ -774,7 +781,9 @@ namespace iVeiOTA {
     case ChunkType::File:
     {
       std::string dest = config.GetDevice(Container::Alternate, chunk.dest);
-      Mount mount(dest, IVEIOTA_MNT_POINT);
+      std::string ftype = config.GetFilesystemType(dest);
+      
+      Mount mount(dest, IVEIOTA_MNT_POINT, ftype);
       if(!mount.IsMounted()) {
         debug << "Failed to mount device" << std::endl;
         success = false;
@@ -790,9 +799,11 @@ namespace iVeiOTA {
     
     ///////////////////////////////////////////////////////////////////////////
     case ChunkType::Dummy:
+    {
       debug << "Processing dummy chunk" << std::endl;
       success = true;
-      break;
+    }
+    break;
       
     default:
       success = false;

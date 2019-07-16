@@ -278,8 +278,8 @@ namespace iVeiOTA {
             debug << "Found device " << name << ":" << line << std::endl;
             return toks[1];
           } else if(toks[1] == name) {
-            return toks[0];
             debug << "Found " << name << ":" << line << std::endl;
+            return toks[0];
           }
         }
       }
@@ -298,12 +298,14 @@ namespace iVeiOTA {
 
   // TODO: Need to implement directory checking / creation
   
-  Mount::Mount(const std::string &dev, const std::string &path) : Mount(dev, path, true, "ext4") {}  
+  Mount::Mount(const std::string &dev, const std::string &path) : Mount(dev, path, true, "ext4") {}
+  Mount::Mount(const std::string &dev, const std::string &path, const std::string &type) : Mount(dev, path, true, type) {}
   Mount::Mount(const std::string &dev, const std::string &path, bool allowOtherPath, const std::string &type) :
     dev(dev), path(path) {
     std::string mpath = DeviceMounted(dev);
     
     // device already mounted
+    // TODO: We can probably continue from this state, but what to do about it?
     if(mpath.length() > 0) {
       debug << "Already mounted: " << dev << ":" << mpath << std::endl;
       isMounted = false;
@@ -315,11 +317,13 @@ namespace iVeiOTA {
     // Check to make sure we can mount on the supplied path
     mpath = PathMountedOn(path);
     if(mpath.length() <= 0) {
+      debug << "Path " << path << " already mounted on by " << mpath << std::endl;
       if(allowOtherPath) {
         //TODO: implement this
         // Generate a new path here to mount on
       }
       isMounted = false;
+      return;
     }
     
     // Mount the device onto path
@@ -332,7 +336,6 @@ namespace iVeiOTA {
     } else {
       isMounted = true;
     }
-    
   }
   
   Mount::~Mount() {            
