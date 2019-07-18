@@ -316,7 +316,7 @@ namespace iVeiOTA {
     
     // Check to make sure we can mount on the supplied path
     mpath = PathMountedOn(path);
-    if(mpath.length() <= 0) {
+    if(mpath.length() > 0) {
       debug << "Path " << path << " already mounted on by " << mpath << std::endl;
       if(allowOtherPath) {
         //TODO: implement this

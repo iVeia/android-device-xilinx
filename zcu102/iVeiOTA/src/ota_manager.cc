@@ -454,7 +454,7 @@ namespace iVeiOTA {
       case OTAState::UpdateAvailable: status = 1; break;
       case OTAState::Initing:         status = 2; break;
       case OTAState::Preparing:       status = 3; break;
-      case OTAState::Canceling:       status = 3; break; // Canceling will count as preparing
+      case OTAState::Canceling:       status = 3; break; // Canceling will count as preparing - TODO: Revisit this...
       case OTAState::InitDone:
         if(!processingChunk) {
           status = 4;

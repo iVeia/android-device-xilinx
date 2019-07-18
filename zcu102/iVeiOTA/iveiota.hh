@@ -3,7 +3,7 @@
 
 // Semantic versioning for the OTA server/client
 #define IVEIOTA_MAJOR 0
-#define IVEIOTA_MINOR 6
+#define IVEIOTA_MINOR 7
 #define IVEIOTA_PATCH 3
 
 //TODO: Much of this should be in a config file, or be passed as a command line
@@ -13,7 +13,7 @@
 #define IVEIOTA_KERNEL_CMDLINE "/proc/cmdline"
 
 // The place the server will mount partitions for modifications
-#define IVEIOTA_MNT_POINT     "/ota_tmp"
+#define IVEIOTA_MNT_POINT     "/mnt/ota_tmp"
 
 // The UNIX domain socket the server will communicate on
 //  the @ gets replaced by \0 for abstract namespace required by Android

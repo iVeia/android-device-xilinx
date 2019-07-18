@@ -220,8 +220,11 @@ namespace iVeiOTA {
     std::string dev = config.GetDevice(container, Partition::BootInfo);
     
     Mount mount(dev, IVEIOTA_MNT_POINT);
-    if(!mount.IsMounted()) return false;
-    else {
+    if(!mount.IsMounted()) {
+      debug << Debug::Mode::Err <<  "Failed to mount BootInfo partition: " << dev << " for writing" << std::endl;
+      return false;
+    } else {
+      debug << "Mounted " << dev << " to write boot info" << std::endl;
       // TODO: Need proper path handling here
       std::ofstream output(mount.Path() + "/" + IVEIOTA_UBOOT_CONF_NAME);
       output << "BOOT_UPDATED=" << (info.updated?"1":"0") << std::endl;
