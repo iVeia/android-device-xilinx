@@ -55,7 +55,9 @@ add_mac_to_fdt=\
 loadABscript_addr=0x3000000
 ABscript=AB.img
 loadABscript=load mmc $sdbootdev:$partid ${loadABscript_addr} ${ABscript}
-runABscript=run loadABscript; source ${loadABscript_addr}
+
+# If AB script returns, we should try to do something else - here we will force a boot of container A
+runABscript=run loadABscript; source ${loadABscript_addr}; setenv force_boot_container a; source ${loadABscript_addr}
 
 # Called by the AB script
 prepboot=setenv fdt_file iveia-helios-z8.dtb;run iv_helios_ivmmc;setenv sdbootdev ${iv_mmc}; run uenvboot; setenv iv_tty ttyPS0; run defargs;

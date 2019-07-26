@@ -30,7 +30,7 @@ test -n "${kernel_addr}" || setenv kernel_addr 0x80000
 test -n "${fdt_file}" || setenv fdt_file fdt.dtb
 test -n "${fdt_addr}" || setenv fdt_addr 0x80000
 
-test -n "${force_boot_container}" || setenv force_boot_container "none"
+test -n "${force_boot_container}" || setenv force_boot_container none
 
 echo "AB selection script v 1.1.0"
 
@@ -163,10 +163,10 @@ echo "BOOTB info: ${BOOT_B_UPDATED} ${BOOT_B_VALID} ${BOOT_B_COUNT} ${BOOT_B_REV
 setenv bootPartitionA 0
 setenv bootPartitionB 0
 
-if test ${force_boot_container} = "a"; then
+if test ${force_boot_container} = a; then
     setenv bootPartitionA 1
     echo "Forcing boot of container A";
-elif test ${force_boot_container} = "b"; then
+elif test ${force_boot_container} = b; then
     setenv bootPartitionB 1
     echo "Forcing boot of container B";
 elif test ${BOOT_A_BOOTABLE} = 1 && test ${BOOT_B_BOOTABLE} = 0; then
