@@ -1,5 +1,6 @@
 #These should come from the u-boot default environment as they will be
 #  board specific.  These are just defaults that probably won't work
+setenv AB_SELECT_SCRIPT_VER 1.1.1
 
 # MMC device number for the bootable flash part
 test -n "${BOOT_DEV}" || setenv BOOT_DEV 99
@@ -32,7 +33,7 @@ test -n "${fdt_addr}" || setenv fdt_addr 0x80000
 
 test -n "${force_boot_container}" || setenv force_boot_container none
 
-echo "AB selection script v 1.1.0"
+echo "AB selection script v ${AB_SELECT_SCRIPT_VER}"
 
 # TODO: Would like to put this into another script so it isn't copy/paste
 #first we want to try and load the A settings
@@ -162,12 +163,15 @@ echo "BOOTA info: ${BOOT_A_UPDATED} ${BOOT_A_VALID} ${BOOT_A_COUNT} ${BOOT_A_REV
 echo "BOOTB info: ${BOOT_B_UPDATED} ${BOOT_B_VALID} ${BOOT_B_COUNT} ${BOOT_B_REV} ${BOOT_B_BOOTABLE}"
 setenv bootPartitionA 0
 setenv bootPartitionB 0
+setenv forceBoot 0
 
 if test ${force_boot_container} = a; then
     setenv bootPartitionA 1
+    setenv forceBoot 1
     echo "Forcing boot of container A";
 elif test ${force_boot_container} = b; then
     setenv bootPartitionB 1
+    setenv forceBoot 1
     echo "Forcing boot of container B";
 elif test ${BOOT_A_BOOTABLE} = 1 && test ${BOOT_B_BOOTABLE} = 0; then
     setenv bootPartitionA 1
@@ -214,7 +218,7 @@ if test ${bootPartitionA} = 1; then
     
     setenv boot_rootfs ${BOOT_A_ROOT}
     test -n "${defabargs}" && run defabargs
-    setenv bootargs ${abbootargs} root=${BOOT_A_ROOT} androidboot.container=a iveia.boot.active=a iveia.boot.alternate=b iveia.boot.rev=${BOOT_A_REV} iveia.boot.updated=${BOOT_A_UPDATED} ievia.boot.fallback=${FALLBACK_BOOT} ${otherargs}
+    setenv bootargs ${abbootargs} root=${BOOT_A_ROOT} androidboot.container=a  iveia.boot.vers=${AB_SELECT_SCRIPT_VER} iveia.boot.active=a iveia.boot.alternate=b iveia.boot.rev=${BOOT_A_REV} iveia.boot.updated=${BOOT_A_UPDATED} ievia.boot.fallback=${FALLBACK_BOOT} iveia.boot.forced=${forcedBoot} ${otherargs}
     
     setenv  BOOT_UPDATED ${BOOT_A_UPDATED}
     setenv  BOOT_VALID   ${BOOT_A_VALID}
@@ -239,7 +243,7 @@ elif test ${bootPartitionB} = 1; then
     
     setenv boot_rootfs ${BOOT_B_ROOT}
     test -n "${defabargs}" && run defabargs
-    setenv bootargs ${abbootargs} root=${BOOT_B_ROOT} androidboot.container=b iveia.boot.active=b iveia.boot.alternate=a iveia.boot.rev=${BOOT_B_REV} iveia.boot.updated=${BOOT_B_UPDATED} ievia.boot.fallback=${FALLBACK_BOOT} ${otherargs}
+    setenv bootargs ${abbootargs} root=${BOOT_B_ROOT} androidboot.container=b iveia.boot.ver=${AB_SELECT_SCRIPT_VER} iveia.boot.active=b iveia.boot.alternate=a iveia.boot.rev=${BOOT_B_REV} iveia.boot.updated=${BOOT_B_UPDATED} ievia.boot.fallback=${FALLBACK_BOOT} iveia.boot.forced=${forcedBoot} ${otherargs}
     
     setenv  BOOT_UPDATED ${BOOT_B_UPDATED}
     setenv  BOOT_VALID   ${BOOT_B_VALID}
