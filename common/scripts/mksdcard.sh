@@ -69,31 +69,61 @@ umount ${diskname}${prefix}*
 echo "========= creating partition table"
 parted -s ${diskname} mklabel msdos
 
-echo "========= creating BOOT partition"
-parted -s --align=optimal ${diskname} mkpart primary 4MiB 132MiB
+offset=4
+echo "========= creating BOOT partition : 2GiB"
+parted -s --align=optimal ${diskname} mkpart primary ${offset}MiB $((offset+2048))MiB
+let offset=offset+2048
 
-echo "========= creating ROOT partition"
-parted -s --align=optimal ${diskname} mkpart primary 132MiB 260MiB
+echo "========= creating Extended partition : 13 GiB"
+parted -s --align=optimal ${diskname} mkpart extended ${offset}MiB $((offset+1024*13))MiB
+let offset=offset+4 # Only increment by 4 because we are partitioning inside the extended
 
-# Making extended partition. Reserve 3GiB. 
-# It will contain system and cache partitions for now.
-# Additional misc. partitions (vendor, misc) should be placed
-# on this extended partition after cache.
-parted -s --align=optimal ${diskname} mkpart extended 260MiB 3332MiB
+echo "********* creating container A ****************"
+echo "========= creating BootInfo partition : 256 MiB"
+parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+256))MiB
+let offset=offset+512
 
-echo "========= creating SYSTEM partition"
-parted -s --align=optimal ${diskname} mkpart logical 264MiB 2312MiB
+echo "========= creating ROOT partition : 1GiB"
+parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+1024))MiB
+let offset=offset+1025
 
-echo "========= creating CACHE partition"
-parted -s --align=optimal ${diskname} mkpart logical 2316MiB 2828MiB
+echo "========= creating SYS partition : 4 GiB"
+parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+4*1024))MiB
+let offset=offset+4*1024+1
 
-echo "========= creating DATA partition"
-parted -s --align=optimal ${diskname} mkpart primary 3332MiB 100%
+echo "========= creating CACHE partition : 768 MiB"
+parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+768))MiB
+let offset=offset+778
+
+echo "********* creating container B ****************"
+echo "========= creating BootInfo partition : 256 MiB"
+parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+256))MiB
+let offset=offset+512
+
+echo "========= creating ROOT partition : 1GiB"
+parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+1024))MiB
+let offset=offset+1025
+
+echo "========= creating SYS partition : 4 GiB"
+parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+4*1024))MiB
+let offset=offset+4*1024+1
+
+echo "========= creating CACHE partition : 768 MiB"
+parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+768))MiB
+let offset=offset+768
+
+offset=$((2048+1024*13+128))
+echo "========= creating Data partition : 8 GiB"
+parted -s --align=optimal ${diskname} mkpart primary ${offset}MiB $((offset+8*1024))MiB
+let offset=offset+8*1024
+
+echo "========= creating Scratch partition"
+parted -s --align=optimal ${diskname} mkpart primary ${offset}MiB 100%
 
 sync
 sleep 1
 
-for n in `seq 1 6` ; do
+for n in `seq 1 12` ; do
 	if ! [ -e ${diskname}${prefix}$n ] ; then
 		echo "!!! Error: missing partition ${diskname}${prefix}$n" ;
 		exit 1;
@@ -104,17 +134,35 @@ done
 echo "========= formating BOOT partition"
 mkfs.vfat -F 32 -n BOOT ${diskname}${prefix}1
 
-echo "========= formating ROOT partition"
-mkfs.ext4 -F -L ROOT ${diskname}${prefix}2
+echo "========= formating BootInfoA partition"
+mkfs.ext4 -F -L BIA ${diskname}${prefix}5
 
-echo "========= formating SYSTEM partition"
-mkfs.ext4 -F -L SYSTEM ${diskname}${prefix}5
+echo "========= formating ROOTA partition"
+mkfs.ext4 -F -L ROOTA ${diskname}${prefix}6
 
-echo "========= formating CACHE partition"
-mkfs.ext4 -F -L CACHE ${diskname}${prefix}6
+echo "========= formating SYSTEMA partition"
+mkfs.ext4 -F -L SYSTEMA ${diskname}${prefix}7
+
+echo "========= formating CACHEA partition"
+mkfs.ext4 -F -L CACHEA ${diskname}${prefix}8
+
+echo "========= formating BootInfoB partition"
+mkfs.ext4 -F -L BIB ${diskname}${prefix}9
+
+echo "========= formating ROOTB partition"
+mkfs.ext4 -F -L ROOTB ${diskname}${prefix}10
+
+echo "========= formating SYSTEMB partition"
+mkfs.ext4 -F -L SYSTEMB ${diskname}${prefix}11
+
+echo "========= formating CACHEB partition"
+mkfs.ext4 -F -L CACHEB ${diskname}${prefix}12
 
 echo "========= formating DATA partition"
-mkfs.ext4 -F -L DATA ${diskname}${prefix}4
+mkfs.ext4 -F -L DATA ${diskname}${prefix}3
+
+echo "========= formating scratch partition"
+mkfs.ext4 -F -L Scratch ${diskname}${prefix}4
 
 
 echo "========= populating BOOT partition"
@@ -130,11 +178,39 @@ else
    exit 1
 fi
 
-echo "========= populating ROOT partition"
-if [ -e ${diskname}${prefix}2 ]; then
+echo "========= populating BootInfoA partition"
+if [ -e ${diskname}${prefix}5 ]; then
+	mkdir -p /tmp/bi_part
+	mount -t ext4 ${diskname}${prefix}5 /tmp/bi_part
+	cp -rfv /root/bi/* /tmp/bi_part/
+	sync
+	umount /tmp/bi_part
+	rm -rf /tmp/bi_part
+else
+   echo "!!! Error: missing BOOT partition ${diskname}${prefix}1";
+   exit 1
+fi
+
+echo "========= populating BootInfoB partition"
+if [ -e ${diskname}${prefix}9 ]; then
+	mkdir -p /tmp/bi_part
+	mount -t ext4 ${diskname}${prefix}9 /tmp/bi_part
+	cp -rfv /root/bi/* /tmp/bi_part/
+	sync
+	umount /tmp/bi_part
+	rm -rf /tmp/bi_part
+else
+   echo "!!! Error: missing BOOT partition ${diskname}${prefix}1";
+   exit 1
+fi
+
+
+echo "========= populating ROOTA partition"
+if [ -e ${diskname}${prefix}6 ]; then
     mkdir -p /tmp/root_part
-	mount -t ext4 ${diskname}${prefix}2 /tmp/root_part
+	mount -t ext4 ${diskname}${prefix}6 /tmp/root_part
 	cp -r /root/root/* /tmp/root_part/
+        cp /tmp/root_part/fstab.zcu102.a /tmp/root_part/fstab.zcu102
 	sync
 	umount /tmp/root_part
 	rm -rf /tmp/root_part
@@ -143,17 +219,31 @@ else
 	exit 1
 fi
 
-echo "========= populating SYSTEM partition"
-if [ -e ${diskname}${prefix}5 ]; then
-	dd if=/root/system.img of=${diskname}${prefix}5
-	e2label ${diskname}${prefix}5 SYSTEM
-	e2fsck -y -f ${diskname}${prefix}5
-    mkdir -p /tmp/sys_part
-    mount -t ext4 ${diskname}${prefix}5 /tmp/sys_part
-    cp -r /root/modules /tmp/sys_part/lib/
-    sync
-    umount /tmp/sys_part
-    rm -rf /tmp/sys_part
+echo "========= populating ROOTB partition"
+if [ -e ${diskname}${prefix}10 ]; then
+    mkdir -p /tmp/root_part
+	mount -t ext4 ${diskname}${prefix}10 /tmp/root_part
+	cp -r /root/root/* /tmp/root_part/
+        cp /tmp/root_part/fstab.zcu102.b /tmp/root_part/fstab.zcu102
+	sync
+	umount /tmp/root_part
+	rm -rf /tmp/root_part
+else
+	echo "!!! Error: missing ROOT partition ${diskname}${prefix}2";
+	exit 1
+fi
+
+echo "========= populating SYSTEMA partition"
+if [ -e ${diskname}${prefix}7 ]; then
+	dd if=/root/system.img of=${diskname}${prefix}7
+else
+	echo "!!! Error: missing SYSTEM partition ${diskname}${prefix}5";
+	exit 1
+fi
+
+echo "========= populating SYSTEMB partition"
+if [ -e ${diskname}${prefix}11 ]; then
+	dd if=/root/system.img of=${diskname}${prefix}11
 else
 	echo "!!! Error: missing SYSTEM partition ${diskname}${prefix}5";
 	exit 1

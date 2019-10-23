@@ -1,0 +1,69 @@
+# Variables that define the AB boot process
+BOOT_DEV=1
+
+BOOT_A_PART=5
+BOOT_A_ROOT=/dev/mmcblk1p6
+
+BOOT_B_PART=9
+BOOT_B_ROOT=/dev/mmcblk1p10
+
+BOOT_COUNT_LIMIT=5
+
+boot_path=/
+boot_ab_file=uEnvAB.txt
+
+# Needed for android
+otherargs=init=/init androidboot.selinux=permissive androidboot.hardware=zcu102 firmware_class.path=/system/etc/firmware clk_ignore_unused
+
+# Insert add_mac_to_fdt command into sdboot command just before booting
+sdboot=run mmcxload && mmc dev $sdbootdev && mmcinfo && load mmc $sdbootdev:$partid $fdt_addr $fdt_file && fdt addr $fdt_addr && fdt ivclean mb $iv_mb_ord && fdt ivclean bp $iv_bp_ord && fdt ivclean io $iv_io_ord && load mmc $sdbootdev:$partid $kernel_addr Image && run add_mac_to_fdt && booti $kernel_addr - $fdt_addr
+
+#
+# Convert SN to MAC addr
+#
+# This would be better done automatically at board init time when iv_mb/iv_io
+# vars are set.  New vars named iv_{mb,io}_mac{01} could be set, for the two
+# MAC addresses reserved per SN.
+#
+oui=00 21 68
+symbols=A B C D E F G H J K L M N P Q R S T U V W X Y Z 2 3 4 5 6 7 8 9
+create_symbol_map=\
+        setenv i 0; \
+        for s in $symbols; do \
+                symbol$s=$i; \
+                setexpr i $i + 1; \
+        done
+sn_to_mac=\
+        run create_symbol_map; \
+        setenv m 0; \
+        for n in 1 2 3 4 5; do \
+            setexpr snchar sub ".*,(.)(.)(.)(.)(.),.*" "\\\\$n" "$iv_mb"; \
+            setenv map setenv snval \\$symbol$snchar; \
+            run map; \
+            setexpr m $m * 0x20; \
+            setexpr m $m + $snval; \
+        done; \
+        setexpr m $m * 0x2; \
+        setenv m 000000$m; \
+        setexpr m sub ".*(..)(..)(..)$" "\\1 \\2 \\3"; \
+        setenv mac "$oui $m"
+add_mac_to_fdt=\
+        run sn_to_mac; \
+        fdt set /amba/NOT_iv_io_00110_NOT_iv_io_00093_NOT_iv_io_00073_ethernet mac-address "[ $mac ]"
+
+# Load and run the AB script
+loadABscript_addr=0x3000000
+ABscript=AB.img
+loadABscript=load mmc $sdbootdev:$partid ${loadABscript_addr} ${ABscript}
+runABscript=run loadABscript; source ${loadABscript_addr}
+
+# Called by the AB script
+prepboot=setenv fdt_file iveia-helios-z8.dtb;run iv_helios_ivmmc;setenv sdbootdev ${iv_mmc}; run uenvboot; setenv iv_tty ttyPS0; run defargs;
+defabargs=setenv abbootargs console=${iv_tty},115200n8 iv_mb=${iv_mb} iv_io=${iv_io} iv_bp=${iv_bp} iv_mmc=${iv_mmc} rw rootwait rootfstype=ext4 earlycon mem=2032M ${otherargs}
+fdtcommand=echo "fdtcommand"; fdt addr $fdt_addr && fdt ivclean mb $iv_mb_ord && fdt ivclean bp $iv_bp_ord && fdt ivclean io $iv_io_ord && run add_mac_to_fdt && echo "done" 
+
+# iVeia Boot process
+setup=setenv iv_io_ord 00125; setenv iv_io 205-00125-01-A1,UNDEF,Bone_Island; setenv fdt_file iveia-helios-z8.dtb;setenv iv_mmc 1; mmc dev 0;if fatload mmc 0 ${fdt_addr} ${fdt_file}; then setenv iv_mmc 0; fi; mmc dev 1; setenv sdbootdev ${iv_mmc}; setenv iv_tty ttyPS0; 
+memadj=echo "mem adjust"; mw ff180080 40; mw ff180084 40; mw ff0a0244 00002003; mw ff0a0248 00002003; mw ff0a0008 20032003; mw ff0a0044 00002003;
+fpga_setup=run rst_fpga_active; fatload mmc $sdbootdev ${xloadaddr} ${xloadfile}; fpga loadb 0 ${xloadaddr} ${filesize}; run rst_fpga_inactive
+defargs=run setup; run memadj; run fpga_setup; setenv modeboot runABscript

@@ -7,26 +7,19 @@ if [ -z "${OUT}" ]; then
 fi
 
 FILES=(
+    boot
+    bi
     fsbl.bin
     mksdcard.sh
     boot
-    modules
     root
     system.img
     )
 
-#
-# Modules are copied seprately - this would be better moved into the build, and
-# copied to /system/vendor/modules (instead of having mksdcard.sh do it).
-#
-BRCM_DIR="${OUT}/obj/KERNEL_OBJ/drivers/net/wireless/broadcom/brcm80211"
-MODULES_OUT="${OUT}/modules"
-MODULES=(
-    "${BRCM_DIR}/brcmfmac/brcmfmac.ko"
-    "${BRCM_DIR}/brcmutil/brcmutil.ko"
-    )
-mkdir -p "${MODULES_OUT}"
-cp "${MODULES[@]}" "${MODULES_OUT}"
+cp "${OUT}/boot/Image" "${OUT}/bi/"
+cp "${OUT}/boot/iveia-atlas-ii-z8.dtb" "${OUT}/bi"
+cp "${OUT}/boot/iveia-helios-z8.dtb" "${OUT}/bi"
+mv "${OUT}/root/ota_tmp/sample_manifest" "${OUT}/root/"
 
 #
 # tar up with transformed SDHOME top level dir
