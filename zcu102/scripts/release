@@ -11,13 +11,12 @@ FILES=(
     bi
     fsbl.bin
     mksdcard.sh
-    boot
+    mksdcard-noota.sh
     root
     system.img
     )
 
 cp "${OUT}/boot/Image" "${OUT}/bi/"
-cp "${OUT}/boot/iveia-atlas-ii-z8.dtb" "${OUT}/bi"
 cp "${OUT}/boot/iveia-helios-z8.dtb" "${OUT}/bi"
 mv "${OUT}/root/ota_tmp/sample_manifest" "${OUT}/root/"
 

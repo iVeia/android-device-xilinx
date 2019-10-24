@@ -12,6 +12,10 @@ on fs && property:ro.boot.container=b
     mount_all /fstab.zcu102.b
     setprop ro.crypto.fuse_sdcard false
 
+on fs && property:ro.boot.container=noota
+    mount_all /fstab.zcu102.noota
+    setprop ro.crypto.fuse_sdcard false
+
 on post-fs-data
     mkdir /data/media 0770 media_rw media_rw
     insmod /system/lib/modules/brcmutil.ko

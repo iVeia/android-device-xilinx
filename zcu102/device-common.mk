@@ -109,7 +109,8 @@ PRODUCT_COPY_FILES += \
 # eMMC install script
 PRODUCT_COPY_FILES += \
     device/xilinx/zcu102/scripts/release:release \
-    device/xilinx/common/scripts/mksdcard.sh:mksdcard.sh
+    device/xilinx/common/scripts/mksdcard.sh:mksdcard.sh \
+    device/xilinx/common/scripts/mksdcard-noota.sh:mksdcard-noota.sh
 
 # Include libs for SW graphics
 PRODUCT_PACKAGES += libGLES_android

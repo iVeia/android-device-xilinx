@@ -18,14 +18,14 @@
 
 # Copy basic config files
 PRODUCT_COPY_FILES += \
-    device/xilinx/zcu102/fstab.common:root/fstab.zcu102 \
+    device/xilinx/zcu102/fstab.common:root/fstab.zcu102.noota \
     device/xilinx/zcu102/init.common.rc:root/init.zcu102.rc \
     device/xilinx/zcu102/init.common.usb.rc:root/init.zcu102.usb.rc \
     device/xilinx/zcu102/ueventd.common.rc:root/ueventd.zcu102.rc
 
 # Copy bootloader envs
 PRODUCT_COPY_FILES += \
-   $(LOCAL_PATH)/uEnv.txt:boot/uEnv.txt
+   $(LOCAL_PATH)/uEnv-noota.txt:boot/uEnv-noota.txt
 
 # Copy prebuilt binaries
 PRODUCT_COPY_FILES += \
