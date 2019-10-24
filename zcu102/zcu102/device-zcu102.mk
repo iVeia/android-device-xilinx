@@ -34,3 +34,6 @@ PRODUCT_COPY_FILES += \
 
 # Remove nav bar
 PRODUCT_PROPERTY_OVERRIDES += qemu.hw.mainkeys=1
+
+# Set audio volume persistent default
+PRODUCT_PROPERTY_OVERRIDES += persist.audio.volume=118

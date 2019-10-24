@@ -44,6 +44,7 @@ PRODUCT_COPY_FILES +=  \
     device/xilinx/zcu102/wpa_supplicant.conf:system/etc/wifi/wpa_supplicant.conf \
     device/xilinx/zcu102/wpa_supplicant_overlay.conf:system/etc/wifi/wpa_supplicant_overlay.conf \
     device/xilinx/zcu102/scripts/app_update.sh:system/bin/app_update.sh \
+    device/xilinx/zcu102/scripts/spkrvolume:system/bin/spkrvolume \
 
 # Add sshd
 PRODUCT_PACKAGES += ssh sftp scp sshd ssh-keygen sshd_config start-ssh

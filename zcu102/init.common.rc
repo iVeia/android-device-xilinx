@@ -77,6 +77,7 @@ on post-fs
     chmod 777 /dev/block/mtdblock1
 
     chmod 755 /system/bin/app_update.sh
+    chmod 755 /system/bin/spkrvolume
 
 on boot
     setprop wifi.interface wlan0
@@ -132,6 +133,11 @@ on property:sys.boot_completed=1
     start sshd
     start iVeiOTA
 
+# ALSA audio mixer defaults for speaker out, do before calling play_boot_sound
+on property:sys.boot_completed=1
+    exec u:r:shell:s0 root -- /system/bin/tinymix "Right Output Mixer PCM Playback Switch" 1
+    exec u:r:shell:s0 root -- /system/bin/tinymix "Headphone Playback Volume" 118
+
 service play_boot_sound /system/bin/tinyplay /system/media/audio/wav/piano2.wav
     class main
     user root
@@ -141,11 +147,6 @@ service play_boot_sound /system/bin/tinyplay /system/media/audio/wav/piano2.wav
 
 on property:sys.boot_completed=1
     start play_boot_sound
-
-# ALSA audio mixer defaults for speaker out
-on property:sys.boot_completed=1
-    exec u:r:shell:s0 root -- /system/bin/tinymix "Right Output Mixer PCM Playback Switch" 1
-    exec u:r:shell:s0 root -- /system/bin/tinymix "Headphone Playback Volume" 118
 
 service p2p_supplicant /system/vendor/bin/hw/wpa_supplicant \
     -ip2p0 -Dnl80211 -c/data/misc/wifi/p2p_supplicant.conf \
