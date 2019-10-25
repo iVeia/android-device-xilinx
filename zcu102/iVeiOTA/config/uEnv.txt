@@ -16,7 +16,7 @@ boot_ab_file=uEnvAB.txt
 otherargs=init=/init androidboot.selinux=permissive androidboot.hardware=zcu102 firmware_class.path=/system/etc/firmware clk_ignore_unused
 
 # Insert add_mac_to_fdt command into sdboot command just before booting
-sdboot=run mmcxload && mmc dev $sdbootdev && mmcinfo && load mmc $sdbootdev:$partid $fdt_addr $fdt_file && fdt addr $fdt_addr && fdt ivclean mb $iv_mb_ord && fdt ivclean bp $iv_bp_ord && fdt ivclean io $iv_io_ord && load mmc $sdbootdev:$partid $kernel_addr Image && run add_mac_to_fdt && booti $kernel_addr - $fdt_addr
+sdboot=run rtc_fix; run mmcxload && mmc dev $sdbootdev && mmcinfo && load mmc $sdbootdev:$partid $fdt_addr $fdt_file && fdt addr $fdt_addr && fdt ivclean mb $iv_mb_ord && fdt ivclean bp $iv_bp_ord && fdt ivclean io $iv_io_ord && load mmc $sdbootdev:$partid $kernel_addr Image && run add_mac_to_fdt && booti $kernel_addr - $fdt_addr
 
 #
 # Convert SN to MAC addr
@@ -50,6 +50,48 @@ sn_to_mac=\
 add_mac_to_fdt=\
         run sn_to_mac; \
         fdt set /amba/NOT_iv_io_00110_NOT_iv_io_00093_NOT_iv_io_00073_ethernet mac-address "[ $mac ]"
+
+#
+# RTC must be set with valid time on first powerup.
+#
+# Valid time is Saturday 1/1/2000
+#
+# See also m41t62 datasheet section 3.11 Oscillator stop detection
+#
+rtc_fix=\
+    setenv scratch_addr ${kernel_addr}; \
+    setenv rtc_i2c_addr 68; \
+    setenv rtc_sec_reg 01; \
+    setenv rtc_min_reg 02; \
+    setenv rtc_hrs_reg 03; \
+    setenv rtc_dow_reg 04; \
+    setenv rtc_dom_reg 05; \
+    setenv rtc_mon_reg 06; \
+    setenv rtc_yrs_reg 07; \
+    setenv rtc_flags_reg 0f; \
+    setenv rtc_flags_mask 04; \
+    setenv rtc_st_reg 01; \
+    setenv rtc_st_on 80; \
+    setenv rtc_st_off 00; \
+    mw.b ${scratch_addr} 0; \
+    i2c read ${rtc_i2c_addr} ${rtc_flags_reg} 1 ${scratch_addr}; \
+    setexpr.b rtc_of_masked *${scratch_addr} \\& ${rtc_flags_mask}; \
+    if itest ${rtc_of_masked} > 0; then \
+        echo "WARNING: RTC Oscillator failure, resetting flag and date/time"; \
+        i2c mw ${rtc_i2c_addr} ${rtc_st_reg} ${rtc_st_on}; \
+        i2c mw ${rtc_i2c_addr} ${rtc_st_reg} ${rtc_st_off}; \
+        sleep 4; \
+        i2c mw ${rtc_i2c_addr} ${rtc_flags_reg} 00; \
+        i2c mw ${rtc_i2c_addr} ${rtc_sec_reg} 00; \
+        i2c mw ${rtc_i2c_addr} ${rtc_min_reg} 00; \
+        i2c mw ${rtc_i2c_addr} ${rtc_hrs_reg} 00; \
+        i2c mw ${rtc_i2c_addr} ${rtc_dow_reg} 07; \
+        i2c mw ${rtc_i2c_addr} ${rtc_dom_reg} 01; \
+        i2c mw ${rtc_i2c_addr} ${rtc_mon_reg} 01; \
+        i2c mw ${rtc_i2c_addr} ${rtc_yrs_reg} 00; \
+    else \
+        echo "INFO: RTC Oscillator running normally"; \
+    fi
 
 # Load and run the AB script
 loadABscript_addr=0x3000000
