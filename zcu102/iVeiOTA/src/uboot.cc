@@ -152,6 +152,16 @@ namespace iVeiOTA {
     }
   }
 
+  void UBootManager::SetAll(Container container, bool valid, bool updated, int tries, int rev) {
+    if(containerInfo.find(container) != containerInfo.end()) {
+      containerInfo[container].valid   = valid;
+      containerInfo[container].updated = updated;
+      containerInfo[container].tries   = tries;
+      containerInfo[container].rev     = rev;
+      writeContainerInfo(container);
+    }
+  }
+
   int UBootManager::GetRev(Container container) {
     if(containerInfo.find(container) != containerInfo.end()) {
       return containerInfo[container].rev;
@@ -210,8 +220,11 @@ namespace iVeiOTA {
     std::string dev = config.GetDevice(container, Partition::BootInfo);
     
     Mount mount(dev, IVEIOTA_MNT_POINT);
-    if(!mount.IsMounted()) return false;
-    else {
+    if(!mount.IsMounted()) {
+      debug << Debug::Mode::Err <<  "Failed to mount BootInfo partition: " << dev << " for writing" << std::endl;
+      return false;
+    } else {
+      debug << "Mounted " << dev << " to write boot info" << std::endl;
       // TODO: Need proper path handling here
       std::ofstream output(mount.Path() + "/" + IVEIOTA_UBOOT_CONF_NAME);
       output << "BOOT_UPDATED=" << (info.updated?"1":"0") << std::endl;

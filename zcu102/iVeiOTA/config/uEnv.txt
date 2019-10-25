@@ -7,7 +7,7 @@ BOOT_A_ROOT=/dev/mmcblk1p6
 BOOT_B_PART=9
 BOOT_B_ROOT=/dev/mmcblk1p10
 
-BOOT_COUNT_LIMIT=5
+BOOT_COUNT_LIMIT=3
 
 boot_path=/
 boot_ab_file=uEnvAB.txt
@@ -97,7 +97,9 @@ rtc_fix=\
 loadABscript_addr=0x3000000
 ABscript=AB.img
 loadABscript=load mmc $sdbootdev:$partid ${loadABscript_addr} ${ABscript}
-runABscript=run loadABscript; source ${loadABscript_addr}
+
+# If AB script returns, we should try to do something else - here we will force a boot of container A
+runABscript=run loadABscript; source ${loadABscript_addr}; setenv force_boot_container a; source ${loadABscript_addr}
 
 # Called by the AB script
 prepboot=setenv fdt_file iveia-helios-z8.dtb;run iv_helios_ivmmc;setenv sdbootdev ${iv_mmc}; run uenvboot; setenv iv_tty ttyPS0; run defargs;

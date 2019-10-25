@@ -63,7 +63,6 @@ PRODUCT_COPY_FILES += \
 	device/xilinx/zcu102/iVeiOTA/config/iVeiOTA.conf:system/etc/iVeiOTA.conf \
 	device/xilinx/zcu102/iVeiOTA/config/fstab.zcu102.a:root/fstab.zcu102.a \
 	device/xilinx/zcu102/iVeiOTA/config/fstab.zcu102.b:root/fstab.zcu102.b \
-	device/xilinx/zcu102/iVeiOTA/test/sample_manifest:root/ota_tmp/sample_manifest \
 	device/xilinx/zcu102/iVeiOTA/config/uEnv.txt:boot/uEnv.txt \
 	device/xilinx/zcu102/iVeiOTA/config/AB.img:boot/AB.img \
 	device/xilinx/zcu102/iVeiOTA/config/uEnvAB.txt:bi/uEnvAB.txt
@@ -102,10 +101,14 @@ PRODUCT_COPY_FILES +=  \
     device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt \
     device/xilinx/zcu102/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin \
 
-BRCM_MODULES_DIR=$(ANDROID_PRODUCT_OUT)/obj/KERNEL_OBJ/drivers/net/wireless/broadcom/brcm80211
-PRODUCT_COPY_FILES += \
-    $(BRCM_MODULES_DIR)/brcmfmac/brcmfmac.ko:system/lib/modules/brcmfmac.ko \
-    $(BRCM_MODULES_DIR)/brcmutil/brcmutil.ko:system/lib/modules/brcmutil.ko
+KERNEL_MODULES += \
+	drivers/net/wireless/broadcom/brcm80211/brcmfmac/brcmfmac.ko \
+	drivers/net/wireless/broadcom/brcm80211/brcmutil/brcmutil.ko 
+
+#BRCM_MODULES_DIR=$(ANDROID_PRODUCT_OUT)/obj/KERNEL_OBJ/drivers/net/wireless/broadcom/brcm80211
+#PRODUCT_COPY_FILES += \
+#    $(BRCM_MODULES_DIR)/brcmfmac/brcmfmac.ko:system/lib/modules/brcmfmac.ko \
+#    $(BRCM_MODULES_DIR)/brcmutil/brcmutil.ko:system/lib/modules/brcmutil.ko
 
 # eMMC install script
 PRODUCT_COPY_FILES += \

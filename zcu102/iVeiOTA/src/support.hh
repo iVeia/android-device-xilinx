@@ -108,7 +108,7 @@ namespace iVeiOTA {
     const std::string& Path() const {return path;}
     
     explicit Mount(const std::string &dev, const std::string &path);
-    
+    explicit Mount(const std::string &dev, const std::string &path, const std::string &type);
     explicit Mount(const std::string &dev, const std::string &path, bool allowOtherPath, const std::string &type);
     
     ~Mount();

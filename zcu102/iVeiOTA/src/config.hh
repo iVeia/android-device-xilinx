@@ -18,6 +18,7 @@ namespace iVeiOTA {
     std::string GetContainerName(Container container);
     bool        IsSinglePartition(Partition part);
     std::string GetHashAlgorithmProgram(HashAlgorithm algo);
+    std::string GetFilesystemType(std::string dev);
 
     bool Valid() const;
   protected:
@@ -29,6 +30,9 @@ namespace iVeiOTA {
 
     // Mapping from hash algorithm names to program locations
     std::map<HashAlgorithm, std::string> hashAlgorithms;
+
+    // Mapping from physical device to filsystem type
+    std::map<std::string, std::string> deviceTypes;
     
     std::string active;    // Name of the active container
     std::string alternate; // Name of the alternate container

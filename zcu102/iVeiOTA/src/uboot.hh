@@ -27,6 +27,8 @@ namespace iVeiOTA {
     void SetTries(Container container, int tries);
     void SetRev(Container container, int rev);
 
+    void SetAll(Container container, bool valid, bool updated, int tries, int rev);
+
     // Get the current settings for the container.  These read cached values
     int GetRev(Container container);
     bool GetUpdated(Container container);

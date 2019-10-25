@@ -23,7 +23,7 @@ namespace iVeiOTA {
 
     updated = false;
     
-    // Get the command line args first
+    // Get the kernel command line args first
     try {
       debug << Debug::Mode::Info << "Trying to parse command line" << std::endl;
       std::ifstream conf(cmdLinePath);
@@ -56,6 +56,7 @@ namespace iVeiOTA {
     }
 
     // TODO: We can't do a download with no current - need to have a flag that says that
+    //       
     // TODO: If we ever want to support non-OTA downloads (i.e. just overwrite the active system)
     //       we can revisit this
     if(active.length() == 0 || active == "None") {
@@ -92,26 +93,45 @@ namespace iVeiOTA {
             std::string name  = toks[2];
             std::string dev   = toks[3];
 
+
+            // Try and get the filesystem type if it is in there
+            std::string ftype = "ext4";
+            if(toks.size() > 4) {
+              // Sanity check first
+              for (auto ftype_tmp : std::vector<std::string> {"ext2", "ext3", "ext4", "fat32", "vfat"} ) {
+                if(toks[4] == ftype_tmp) ftype = ftype_tmp;
+              }
+            }
+            
+            // Then get the type of the container
             Container container;
             if(which == "single")                                 container = Container::Single;
             else if(active.length() > 0 && which == active)       container = Container::Active;
             else if(alternate.length() > 0 && which == alternate) container = Container::Alternate;
             else                                                  container = Container::Unknown;
-
             debug << Debug::Mode::Info << "    Partition: " << which << ":" << name << ":" << dev << std::endl;
+
+            // Which type of partition this is
             Partition part = GetPartition(name);
 
             // TODO: Need to check the device file existence too?
             if(container == Container::Single) {
               // A single container (no alternate) will get inserted as active, alternate, and single
               //  so that every GetContainer call will find it
-              debug << "Inserting single container " << ToString(part) << " : " << dev << " for both active and alternate" << std::endl;
+              // TODO: Maybe put that logic into GetContainer to make it more obvious what is going on
+              debug << Debug::Mode::Info << "Inserting single container " << ToString(part) << " : " << dev << " for both active and alternate" << std::endl;
               partitions[Container::Active].insert(std::make_pair(part, dev));
               partitions[Container::Alternate].insert(std::make_pair(part, dev));
               partitions[Container::Single].insert(std::make_pair(part, dev));
-            } else if(container != Container::Unknown && part != Partition::Unknown) {              
-              debug << "Inserting: " << ToString(container) << ":" << ToString(part) << ":" << dev << std::endl;
+
+              debug << Debug::Mode::Info << "Setting device " << dev << " filesystem type to " << ftype << std::endl;
+              deviceTypes[dev] = ftype;
+            } else if(container != Container::Unknown && part != Partition::Unknown) {
+              debug << Debug::Mode::Info << "Inserting: " << ToString(container) << ":" << ToString(part) << ":" << dev << std::endl;
               partitions[container].insert(std::make_pair(part, dev));
+
+              debug << Debug::Mode::Info << "Setting device " << dev << " filesystem type to " << ftype << std::endl;
+              deviceTypes[dev] = ftype;
             } else {
               debug <<
                 Debug::Mode::Warn <<
@@ -192,4 +212,14 @@ namespace iVeiOTA {
       return "";
     }
   }
+
+  std::string GlobalConfig::GetFilesystemType(std::string dev) {
+    if(deviceTypes.find(dev) != deviceTypes.end()) {      
+      return deviceTypes[dev];
+    } else {
+      debug << Debug::Mode::Err << "Did not find filesystem " << dev << " so cannot return type" << std::endl;
+      return "";
+    }
+  }
+  
 };

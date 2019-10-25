@@ -71,12 +71,12 @@ namespace iVeiOTA {
       bool succeeded;          // If this chunks succeeded processing
 
       // TODO: maybe make this a union?
-      // -------------- For image chunk types
+      // -------------- For image chunk types ----------------------------------
       uint64_t pOffset;        // Physical offset (on the device) for Image chunks
       uint64_t fOffset;        // File offset for Image chunks
       uint64_t size;           // How many bytes in the image to write
 
-      // -------------- For archive chunk types
+      // -------------- For archive chunk types --------------------------------
       // TODO: Maybe add a destination for archive chunks so that we can
       //       untar many files to a subdirectory for some reason
       bool complete;           // Is this is a complete filesystem archive
@@ -94,16 +94,17 @@ namespace iVeiOTA {
     std::string whichChunk;   // Which chunk we are processing
     std::string intChunkPath; // The path to the chunk file, for internal use
     
-    std::vector<ChunkInfo> chunks; // A list of chunks we need for an update
-    unsigned int maxIdentLength;   // The max identifier encountered in the manifest
-
-    // For the handling of update initialization
+    // For the handling of update initialization -------------------------------
     pthread_t copyThread; // The thread that does the initialization
     bool joinCopyThread;  // True if the initialization thread needs to be join()ed
     bool copyBI;          // True if we need to copy the BootInfo partition during initialization
     bool copyRoot;        // True if we need to copy the Root partition during initialization
     bool copySystem;      // True if we need to copy the System partition during initialization
     bool clearCache;      // True if we need to clear the cache
+
+    std::vector<ChunkInfo> chunks; // A list of chunks we need for an update
+    unsigned int maxIdentLength;   // The max identifier encountered in the manifest
+
 
     // For handling the canceling of an update
     bool cancelUpdate;    // True if we are trying to cancel the update
