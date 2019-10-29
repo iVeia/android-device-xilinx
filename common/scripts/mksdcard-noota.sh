@@ -66,12 +66,15 @@ echo "reasonable disk $diskname, partitions ${diskname}${prefix}1..." ;
 
 umount ${diskname}${prefix}*
 
+echo "<<iVeia_recovery:update:part,.1>>"
 echo "========= creating partition table"
 parted -s ${diskname} mklabel msdos
 
+echo "<<iVeia_recovery:update:part,.15>>"
 echo "========= creating BOOT partition"
 parted -s --align=optimal ${diskname} mkpart primary 4MiB 132MiB
 
+echo "<<iVeia_recovery:update:part,.2>>"
 echo "========= creating ROOT partition"
 parted -s --align=optimal ${diskname} mkpart primary 132MiB 260MiB
 
@@ -79,14 +82,18 @@ parted -s --align=optimal ${diskname} mkpart primary 132MiB 260MiB
 # It will contain system and cache partitions for now.
 # Additional misc. partitions (vendor, misc) should be placed
 # on this extended partition after cache.
+echo "<<iVeia_recovery:update:part,.25>>"
 parted -s --align=optimal ${diskname} mkpart extended 260MiB 3332MiB
 
+echo "<<iVeia_recovery:update:part,.3>>"
 echo "========= creating SYSTEM partition"
 parted -s --align=optimal ${diskname} mkpart logical 264MiB 2312MiB
 
+echo "<<iVeia_recovery:update:part,.4>>"
 echo "========= creating CACHE partition"
 parted -s --align=optimal ${diskname} mkpart logical 2316MiB 2828MiB
 
+echo "<<iVeia_recovery:update:part,.5>>"
 echo "========= creating DATA partition"
 parted -s --align=optimal ${diskname} mkpart primary 3332MiB 100%
 
@@ -96,58 +103,82 @@ sleep 1
 for n in `seq 1 6` ; do
 	if ! [ -e ${diskname}${prefix}$n ] ; then
 		echo "!!! Error: missing partition ${diskname}${prefix}$n" ;
+		echo "<<iVeia_recovery:complete:part,false>>"
 		exit 1;
 	fi
 	sync
 done
 
+echo "<<iVeia_recovery:update:part,.6>>"
 echo "========= formating BOOT partition"
 mkfs.vfat -F 32 -n BOOT ${diskname}${prefix}1
 
+echo "<<iVeia_recovery:update:part,.65>>"
 echo "========= formating ROOT partition"
 mkfs.ext4 -F -L ROOT ${diskname}${prefix}2
 
+echo "<<iVeia_recovery:update:part,.7>>"
 echo "========= formating SYSTEM partition"
 mkfs.ext4 -F -L SYSTEM ${diskname}${prefix}5
 
+echo "<<iVeia_recovery:update:part,.8>>"
 echo "========= formating CACHE partition"
 mkfs.ext4 -F -L CACHE ${diskname}${prefix}6
 
+echo "<<iVeia_recovery:update:part,.9>>"
 echo "========= formating DATA partition"
 mkfs.ext4 -F -L DATA ${diskname}${prefix}4
 
+echo "<<iVeia_recovery:complete:part,true>>"
 
+
+echo "<<iVeia_recovery:update:pboot,.1>>"
 echo "========= populating BOOT partition"
 if [ -e ${diskname}${prefix}1 ]; then
 	mkdir -p /tmp/boot_part
 	mount -t vfat ${diskname}${prefix}1 /tmp/boot_part
+        echo "<<iVeia_recovery:update:pboot,.2>>"
 	cp -rfv /root/boot/* /tmp/boot_part/
-	mv /tmp/boot_part/uEnv-noota.txt /tmp/boot_part/uEnv.txt 
-	sync
-	umount /tmp/boot_part
+	echo "<<iVeia_recovery:update:pboot,.4>>"
+        mv /tmp/boot_part/uEnv-noota.txt /tmp/boot_part/uEnv.txt 
+	echo "<<iVeia_recovery:update:pboot,.6>>"
+        sync
+	echo "<<iVeia_recovery:update:pboot,.8>>"
+        umount /tmp/boot_part
 	rm -rf /tmp/boot_part
+        echo "<<iVeia_recovery:complete:pboot,true>>"
 else
    echo "!!! Error: missing BOOT partition ${diskname}${prefix}1";
+   echo "<<iVeia_recovery:complete:pboot,false>>"
    exit 1
 fi
 
 echo "========= populating ROOT partition"
+echo "<<iVeia_recovery:update:proot,.1>>"
 if [ -e ${diskname}${prefix}2 ]; then
 	mkdir -p /tmp/root_part
 	mount -t ext4 ${diskname}${prefix}2 /tmp/root_part
-	cp -r /root/root/* /tmp/root_part/
+        echo "<<iVeia_recovery:update:proot,.3>>"
+        cp -r /root/root/* /tmp/root_part/
+        echo "<<iVeia_recovery:update:proot,.6>>"       
 	sync
+        echo "<<iVeia_recovery:update:proot,.9>>"
 	umount /tmp/root_part
 	rm -rf /tmp/root_part
+	echo "<<iVeia_recovery:complete:proot,true>>"
 else
 	echo "!!! Error: missing ROOT partition ${diskname}${prefix}2";
+	echo "<<iVeia_recovery:complete:proot,false>>"
 	exit 1
 fi
 
+echo "<<iVeia_recovery:ddcoming:psystem,$sys_size,0.5,0.95>>"
 echo "========= populating SYSTEM partition"
 if [ -e ${diskname}${prefix}5 ]; then
 	dd if=/root/system.img of=${diskname}${prefix}5
+	echo "<<iVeia_recovery:complete:psystem,true>>"
 else
 	echo "!!! Error: missing SYSTEM partition ${diskname}${prefix}5";
+	echo "<<iVeia_recovery:complete:psystem,false>>"
 	exit 1
 fi
