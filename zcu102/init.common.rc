@@ -136,7 +136,7 @@ on property:sys.boot_completed=1
 # ALSA audio mixer defaults for speaker out, do before calling play_boot_sound
 on property:sys.boot_completed=1
     exec u:r:shell:s0 root -- /system/bin/tinymix "Right Output Mixer PCM Playback Switch" 1
-    exec u:r:shell:s0 root -- /system/bin/tinymix "Headphone Playback Volume" 118
+    exec u:r:shell:s0 root -- /system/bin/spkrvolume ${persist.audio.volume}
 
 service play_boot_sound /system/bin/tinyplay /system/media/audio/wav/piano2.wav
     class main
