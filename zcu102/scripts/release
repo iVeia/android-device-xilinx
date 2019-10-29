@@ -18,7 +18,6 @@ FILES=(
 
 cp "${OUT}/boot/Image" "${OUT}/bi/"
 cp "${OUT}/boot/iveia-helios-z8.dtb" "${OUT}/bi"
-mv "${OUT}/root/ota_tmp/sample_manifest" "${OUT}/root/"
 
 #
 # tar up with transformed SDHOME top level dir
