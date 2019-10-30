@@ -176,7 +176,7 @@ sys_size=$(stat -c%s /root/system.img)
 echo "<<iVeia_recovery:ddcoming:psystem,$sys_size,0.5,0.95>>"
 echo "========= populating SYSTEM partition"
 if [ -e ${diskname}${prefix}5 ]; then
-	dd if=/root/system.img of=${diskname}${prefix}5
+	dd if=/root/system.img of=${diskname}${prefix}5 status=progress
 	echo "<<iVeia_recovery:complete:psystem,true>>"
 else
 	echo "!!! Error: missing SYSTEM partition ${diskname}${prefix}5";
