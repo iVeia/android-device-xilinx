@@ -73,15 +73,32 @@ echo "========= creating BOOT partition : 2GiB"
 parted -s --align=optimal ${diskname} mkpart primary ${offset}MiB $((offset+2048))MiB
 let offset=offset+2048
 
-echo "<<iVeia_recovery:update:part,.1>>"
+echo "<<iVeia_recovery:update:part,.05>>"
 echo "========= creating Extended partition : 13 GiB"
 parted -s --align=optimal ${diskname} mkpart extended ${offset}MiB $((offset+1024*13))MiB
 let offset=offset+4 # Only increment by 4 because we are partitioning inside the extended
 
-echo "<<iVeia_recovery:update:part,.15>>"
+echo "<<iVeia_recovery:update:part,.075>>"
 echo "========= creating BootInfo partition : 256 MiB"
 parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+256))MiB
 let offset=offset+512
+
+echo "<<iVeia_recovery:update:part,.1>>"
+echo "========= creating ROOT partition : 1GiB"
+parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+1024))MiB
+let offset=offset+1025
+
+echo "<<iVeia_recovery:update:part,.125>>"
+echo "========= creating SYS partition : 4 GiB"
+parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+4*1024))MiB
+let offset=offset+4*1024+1
+
+echo "<<iVeia_recovery:update:part,.15>>"
+echo "========= creating CACHE partition : 768 MiB"
+parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+768))MiB
+let offset=offset+778
+
+echo "<<iVeia_recovery:update:part,.175>>"
 echo "========= creating BootInfo partition : 256 MiB"
 parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+256))MiB
 let offset=offset+512
@@ -90,40 +107,31 @@ echo "<<iVeia_recovery:update:part,.2>>"
 echo "========= creating ROOT partition : 1GiB"
 parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+1024))MiB
 let offset=offset+1025
-echo "========= creating ROOT partition : 1GiB"
-parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+1024))MiB
-let offset=offset+1025
+
+echo "<<iVeia_recovery:update:part,.225>>"
+echo "========= creating SYS partition : 4 GiB"
+parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+4*1024))MiB
+let offset=offset+4*1024+1
 
 echo "<<iVeia_recovery:update:part,.25>>"
-echo "========= creating SYS partition : 4 GiB"
-parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+4*1024))MiB
-let offset=offset+4*1024+1
-echo "========= creating SYS partition : 4 GiB"
-parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+4*1024))MiB
-let offset=offset+4*1024+1
-
-echo "<<iVeia_recovery:update:part,.3>>"
-echo "========= creating CACHE partition : 768 MiB"
-parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+768))MiB
-let offset=offset+778
 echo "========= creating CACHE partition : 768 MiB"
 parted -s --align=optimal ${diskname} mkpart logical ${offset}MiB $((offset+768))MiB
 let offset=offset+768
 
-echo "<<iVeia_recovery:update:part,.35>>"
+echo "<<iVeia_recovery:update:part,.275>>"
 offset=$((2048+1024*13+128))
 echo "========= creating Data partition : 8 GiB"
 parted -s --align=optimal ${diskname} mkpart primary ${offset}MiB $((offset+8*1024))MiB
 let offset=offset+8*1024
 
-echo "<<iVeia_recovery:update:part,.4>>"
+echo "<<iVeia_recovery:update:part,.3>>"
 echo "========= creating Scratch partition"
 parted -s --align=optimal ${diskname} mkpart primary ${offset}MiB 100%
 
 sync
 sleep 1
 
-echo "<<iVeia_recovery:update:part,.5>>"
+echo "<<iVeia_recovery:update:part,.4>>"
 for n in `seq 1 12` ; do
 	if ! [ -e ${diskname}${prefix}$n ] ; then
 		echo "!!! Error: missing partition ${diskname}${prefix}$n" ;
@@ -133,7 +141,7 @@ for n in `seq 1 12` ; do
 	sync
 done
 
-echo "<<iVeia_recovery:update:part,.55>>"
+echo "<<iVeia_recovery:update:part,.5>>"
 echo "========= formating BOOT partition"
 mkfs.vfat -F 32 -n BOOT ${diskname}${prefix}1
 
