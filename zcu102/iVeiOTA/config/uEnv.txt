@@ -15,9 +15,6 @@ boot_ab_file=uEnvAB.txt
 # Needed for android
 otherargs=init=/init androidboot.selinux=permissive androidboot.hardware=zcu102 firmware_class.path=/system/etc/firmware clk_ignore_unused
 
-# Insert add_mac_to_fdt command into sdboot command just before booting
-sdboot=run rtc_fix; run mmcxload && mmc dev $sdbootdev && mmcinfo && load mmc $sdbootdev:$partid $fdt_addr $fdt_file && fdt addr $fdt_addr && fdt ivclean mb $iv_mb_ord && fdt ivclean bp $iv_bp_ord && fdt ivclean io $iv_io_ord && load mmc $sdbootdev:$partid $kernel_addr Image && run add_mac_to_fdt && booti $kernel_addr - $fdt_addr
-
 #
 # Convert SN to MAC addr
 #
@@ -110,4 +107,4 @@ fdtcommand=echo "fdtcommand"; fdt addr $fdt_addr && fdt ivclean mb $iv_mb_ord &&
 setup=setenv iv_io_ord 00125; setenv iv_io 205-00125-01-A1,UNDEF,Bone_Island; setenv fdt_file iveia-helios-z8.dtb;setenv iv_mmc 1; mmc dev 0;if fatload mmc 0 ${fdt_addr} ${fdt_file}; then setenv iv_mmc 0; fi; mmc dev 1; setenv sdbootdev ${iv_mmc}; setenv iv_tty ttyPS0; 
 memadj=echo "mem adjust"; mw ff180080 40; mw ff180084 40; mw ff0a0244 00002003; mw ff0a0248 00002003; mw ff0a0008 20032003; mw ff0a0044 00002003;
 fpga_setup=run rst_fpga_active; fatload mmc $sdbootdev ${xloadaddr} ${xloadfile}; fpga loadb 0 ${xloadaddr} ${filesize}; run rst_fpga_inactive
-defargs=run setup; run memadj; run fpga_setup; setenv modeboot runABscript
+defargs=run rtc_fix; run setup; run memadj; run fpga_setup; setenv modeboot runABscript
