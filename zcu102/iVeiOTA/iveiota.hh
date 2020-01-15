@@ -4,7 +4,7 @@
 // Semantic versioning for the OTA server/client
 #define IVEIOTA_MAJOR 1
 #define IVEIOTA_MINOR 0
-#define IVEIOTA_PATCH 2
+#define IVEIOTA_PATCH 6
 
 //TODO: Much of this should be in a config file, or be passed as a command line
 //      parameter.

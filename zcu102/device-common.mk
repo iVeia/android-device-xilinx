@@ -67,6 +67,9 @@ PRODUCT_COPY_FILES += \
 	device/xilinx/zcu102/iVeiOTA/config/AB.img:boot/AB.img \
 	device/xilinx/zcu102/iVeiOTA/config/uEnvAB.txt:bi/uEnvAB.txt
 
+# Add i2c tools in there
+PRODUCT_PACKAGES += i2c-tools i2cget i2cdetect i2cset i2cdump
+
 
 # Add tinyalsa
 PRODUCT_PACKAGES += \
