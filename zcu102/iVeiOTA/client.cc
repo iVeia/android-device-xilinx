@@ -16,21 +16,24 @@
 using namespace std;
 using namespace iVeiOTA;
 
+// Give ourselves a hint in console dumps that this is from our test client
+#define IVEIOTA_TEST_CLIENT "<testCli> "
+
 // Not thread safe
 static volatile bool exiting = false;
 void signalHandler(int sig) {
   switch(sig) {
     case SIGINT:
-      std::cout << "sigint received: exiting" << std::endl;
+      std::cout << IVEIOTA_TEST_CLIENT << "sigint received: exiting" << std::endl;
       exiting = true;
-      break;      
+      break;
   }
 }
 
 int main(int argc, char ** argv) {
     signal (SIGINT, signalHandler);
 
-    cout << "iVeiOTA client starting..." << endl;
+    cout << IVEIOTA_TEST_CLIENT << "iVeiOTA test client starting..." << endl;
 
     struct {
         char const *arg;
@@ -63,10 +66,10 @@ int main(int argc, char ** argv) {
             if(commands[j].arg == 0) break;
 
             if(strncmp(argv[i], "--nocopy", 8) == 0) {
-              cout << "Doing a no copy" << endl;
+              cout << IVEIOTA_TEST_CLIENT << "Doing a no copy" << endl;
               noCopy = true;
             }
-            
+
             if(strncmp(commands[j].arg, argv[i], strlen(commands[j].arg)) == 0) {
                 uint32_t i1=0, i2=0, i3=0, i4=0;
                 vector<uint8_t> payload;
@@ -79,7 +82,7 @@ int main(int argc, char ** argv) {
                       cerr << "Need a manifest file to begin update" << endl;
                       break;
                     }
-                    
+
                     // This needs a path to the manifest file
                     i1 = 1; // Manifest on filesystem
                     if(noCopy) i4 = 42; // no copy for convenience sake
@@ -93,7 +96,7 @@ int main(int argc, char ** argv) {
                           strcmp(commands[j].arg, "--bsuccess") == 0) {
                     i1 = 1; // current container
                   } // end successes
-                                 
+
 
                   else if(strcmp(commands[j].arg, "--process") == 0) {
                     i += 2;
@@ -101,7 +104,7 @@ int main(int argc, char ** argv) {
                       cerr << "Need a chunk file and identifier to begin update" << endl;
                       break;
                     }
-                    
+
                     // This needs a path to the chunk file
                     i1 = 1; //
                     for(int q = 0; q < (int)strlen(argv[i-1]); q++) {
@@ -114,14 +117,14 @@ int main(int argc, char ** argv) {
                     payload.push_back('\0');
 
                   } // end process
-                  
+
                 }
 
-                cout << "pushing message: " << (int)commands[j].cmd << ":" << (int)commands[j].subCmd <<
+                cout << IVEIOTA_TEST_CLIENT << "pushing message: " << (int)commands[j].cmd << ":" << (int)commands[j].subCmd <<
                   ":" << i1 << ":" << i2 << ":" << i3 << ":" << i4 << ":" << payload.size() << endl;
 
                 messages.push_back(Message(commands[j].cmd, commands[j].subCmd,
-                                           i1, i2, i3, i4, 
+                                           i1, i2, i3, i4,
                                            payload));
             }
 
@@ -129,32 +132,32 @@ int main(int argc, char ** argv) {
         }
     }
 
-    cout << "Connecting to server." << endl;
+    cout << IVEIOTA_TEST_CLIENT << "Connecting to server." << endl;
     SocketInterface intf(
       [](const Message &message) {
-        cout << "Received message: " << (int)message.header.type << ":" << (int)message.header.subType << endl;
-        cout << "\t" << message.header.imm[0] << ":" << message.header.imm[1] << ":" << message.header.imm[2] << message.header.imm[3] << endl;
+        cout << IVEIOTA_TEST_CLIENT << "Received message: " << (int)message.header.type << ":" << (int)message.header.subType << endl;
+        cout << "\t" << message.header.imm[0] << ":" << message.header.imm[1] << ":" << message.header.imm[2] << ":" << message.header.imm[3] << endl;
         cout << "\t" << message.header.pLen << endl;
         for(unsigned int i = 0; i < message.payload.size(); i++) {
-          printf(" .%c.%02X. ", (char)message.payload[i], message.payload[i]);
-          if((i % 32) == 0) printf(" -- \n");
+          printf(" %c|%02X ", (char)message.payload[i], message.payload[i]);
+          if(((i + 1) % 10) == 0) printf(" -- \n");
         }
         if(message.payload.size() > 0) cout << endl;
     });
 
     // Sending all messages
     for(auto m : messages) {
-      cout << "Sending message: " << (int)m.header.type << ":" << (int)m.header.subType << endl;
+      cout << IVEIOTA_TEST_CLIENT << "Sending message: " << (int)m.header.type << ":" << (int)m.header.subType << endl;
       intf.Send(m);
     }
-    
+
     while(!exiting) {
       // Process any data we need to from the server
       if(!intf.Process()) {
         break;
       }
     }
-    
-    
+
+
     return 0;
 }

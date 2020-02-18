@@ -22,7 +22,7 @@ namespace iVeiOTA {
     manager->initUpdateFunction();
     manager->joinCopyThread = true;
     return nullptr;
-  }  
+  }
   void* ProcessThreadFunction(void *data) {
     OTAManager *manager = (OTAManager*)data;
     manager->processChunk();
@@ -56,7 +56,7 @@ namespace iVeiOTA {
 
     // We have no update in progress, so no update to cancel
     cancelUpdate = false;
-    
+
     // Then we need to look and see if there is an upate currently in progress and,
     //  if so, try and restore it
     bool manifestValid = false;
@@ -77,7 +77,7 @@ namespace iVeiOTA {
       RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
       RunCommand("sync"); // We also have to sync the filesystem so we can reboot
     }
-    
+
     if(manifestValid) {
       state = OTAState::UpdateAvailable;
       // There was, what appears to be, a valid cached manifest from a previous update
@@ -140,12 +140,12 @@ namespace iVeiOTA {
       debug << " -- status message" << std::endl;
       return processStatusMessage(message);
       break;
-      
+
     case Message::OTAUpdate:
       debug << " -- update message" << std::endl;
       return processActionMessage(message);
       break;
-      
+
     default:
       debug << Debug::Mode::Warn << "Unknown message: " << message.header.toString() << std::endl;
       std::vector<std::unique_ptr<Message>> ret;
@@ -166,7 +166,7 @@ namespace iVeiOTA {
       ret.push_back(Message::MakeNACK(message, 0, "processActionMessage called with the wrong type of message"));
       return ret;
     }
-    
+
     switch(message.header.subType) {
 
       // ****************************************************************************** //
@@ -204,7 +204,7 @@ namespace iVeiOTA {
             ret.push_back(Message::MakeNACK(message, 0, "Invalid Manifest Path"));
           }
         }
-        
+
         // If we managed to make a manifest out of that, then process it
         // TODO: Think more about this
         // If a manifest is larger than 10K bytes, assume it is not correct
@@ -212,24 +212,37 @@ namespace iVeiOTA {
            manifest.length() < 1024*10) {
           if(processManifest(manifest)) {
             // If we are here, then we have a proper manifest and can continue with the update
-          
-            debug << "state -> preparing" << std::endl;
-            state = OTAState::Preparing;
-            if(prepareForUpdate()) {
-              // We succeeded in starting the preparation for an update
+
+            //check special case of single chunk with script type
+            //this is what we use for ChillUPS updates... hack this in for now
+            if ((chunks.size() == 1) && (chunks.at(0).type == ChunkType::Script))
+            {
+              //do special processing for scripts (no copy of anything)
+              //just set fake state to make it look as if all is well
+              debug << "state -> InitDone (single 'Script' chunk, no file system copies needed)" << std::endl;
+              state = OTAState::InitDone;
               ret.push_back(Message::MakeACK(message));
-            } else {
-              // Failed to prepare for update
-              debug << "Failed to prepare: state -> idle" << std::endl;
-              state = OTAState::Idle;
-              ret.push_back(Message::MakeNACK(message, 0, "Failed to prepare for update"));
+            }
+            else
+            {
+              debug << "state -> preparing" << std::endl;
+              state = OTAState::Preparing;
+              if(prepareForUpdate()) {
+                // We succeeded in starting the preparation for an update
+                ret.push_back(Message::MakeACK(message));
+              } else {
+                // Failed to prepare for update
+                debug << "Failed to prepare: state -> idle" << std::endl;
+                state = OTAState::Idle;
+                ret.push_back(Message::MakeNACK(message, 0, "Failed to prepare for update"));
+              }
             }
           } else {
             // Failed to process the manifest
             debug << "Manifest invalid: state -> idle" << std::endl;
             state = OTAState::Idle;
             ret.push_back(Message::MakeNACK(message, 0, "Failed to process manifest"));
-          } 
+          }
         } else {
           debug << "Manifest invalid: state -> idle" << std::endl;
           state = OTAState::Idle;
@@ -238,7 +251,7 @@ namespace iVeiOTA {
       } // end if(state != Idle) else
     } // end case BeginUpdate
     break;
-    
+
     // ****************************************************************************** //
     // ------------------------- Continue an update ---------------------------------
     // ****************************************************************************** //
@@ -251,10 +264,23 @@ namespace iVeiOTA {
         int completed = 0;
         for(auto chunk : chunks) { if(chunk.processed == true) completed++; }
         debug << Debug::Mode::Info << "Continuing an update with " << completed << " chunks completed" << std::endl;
-        if(prepareForUpdate(completed > 0)) {
+
+        //hack this in to cover resumption of Script chunk special case
+        //not sure if this will work but can test
+        if ((chunks.size() == 1) && (chunks.at(0).type == ChunkType::Script))
+        {
+          //do special processing for scripts (no copy of anything)
+          //just set fake state to make it look as if all is well
+          debug << "Continuing update without copying (single 'Script' chunk, no file system copies needed)" << std::endl;
           ret.push_back(Message::MakeACK(message));
-        } else {
-          ret.push_back(Message::MakeNACK(message, 0, "Failed to continue update"));
+        }
+        else
+        {
+          if(prepareForUpdate(completed > 0)) {
+            ret.push_back(Message::MakeACK(message));
+          } else {
+            ret.push_back(Message::MakeNACK(message, 0, "Failed to continue update"));
+          }
         }
       }
     }
@@ -275,7 +301,7 @@ namespace iVeiOTA {
       }
     }
     break;
-    
+
     // ****************************************************************************** //
     // ------------------------- Process a chunk ------------------------------------
     // ****************************************************************************** //
@@ -294,9 +320,9 @@ namespace iVeiOTA {
             break;
           }
           ident += (char)message.payload[identEnd];
-        }        
+        }
         debug << " -- chunk ident: " << ident << "  " << identEnd << std::endl;
-        
+
         // The payload should be at a null-terminator.  If it isn't something went wrong
         if(identEnd >= message.payload.size() || message.payload[identEnd] != '\0') {
           debug << Debug::Mode::Warn << "Malformed chunk message" << std::endl;
@@ -309,7 +335,7 @@ namespace iVeiOTA {
             // Found it, so indicate that we are processing it
             whichChunk = chunk->ident;
             processingChunk = true;
-            
+
             // We should process this chunk, so first extract the path to the data
             if(message.header.imm[0] == 0) {
               // TODO: Implement chunk data in message payload
@@ -329,7 +355,7 @@ namespace iVeiOTA {
               identEnd++;
               auto itEnd = message.payload.begin() + identEnd;
               while(itEnd != message.payload.end() && *itEnd != 0) itEnd++;
-              
+
               // Get the string that is the path to the file, then send it for processing
               std::string path(message.payload.begin() + identEnd, itEnd);
               debug << "Chunk path " << path << std::endl;
@@ -367,7 +393,7 @@ namespace iVeiOTA {
       } // end if(state != InitDone) :: else
     }
     break;
-    
+
     // ****************************************************************************** //
     // ------------------------- Finalize an update ---------------------------------
     // ****************************************************************************** //
@@ -395,7 +421,12 @@ namespace iVeiOTA {
           ret.push_back(Message::MakeNACK(message, 0, "Internal error"));
         } // end switch(state)
       } else {
-        if(singleContainerOnly) {
+        //hack in the special Script case here to support ChillUPS
+        if ((chunks.size() == 1) && (chunks.at(0).type == ChunkType::Script))
+        {
+          debug << Debug::Mode::Info << "Skipping container switching as this is a single-chunk 'Script' update" << std::endl;
+        }
+        else if(singleContainerOnly) {
           debug << Debug::Mode::Info << "Skipping container switching as this is a single partition download" << std::endl;
         } else {
           int currentRev = bootMgr.GetRev(Container::Active);
@@ -422,15 +453,15 @@ namespace iVeiOTA {
       }
     }
     break;
-    
+
     default:
     {
       debug << Debug::Mode::Warn << "Invalid command sub type: " << message.header.toString() << std::endl;
       ret.push_back(Message::MakeNACK(message, 0, "Invalid command sub type"));
     }
-    break;            
+    break;
     } // end switch(subType)
-    
+
     return ret;
   }
 
@@ -438,12 +469,12 @@ namespace iVeiOTA {
   //  the OTA server
   std::vector<std::unique_ptr<Message>> OTAManager::processStatusMessage(const Message &message) {
     std::vector<std::unique_ptr<Message>> ret;
-    
+
     if(message.header.type != static_cast<uint32_t>(Message::OTAStatus)) {
       debug << "Not the right type in OTAManager::processStatusMessage" << std::endl;
       return ret;
     }
-    
+
     debug << " subType: " << (int)message.header.subType << std::endl;
     switch(message.header.subType) {
     case Message::OTAStatus.UpdateStatus:
@@ -467,7 +498,7 @@ namespace iVeiOTA {
       }
 
       uint32_t allPassed = (state == OTAState::AllDone)?1:0;
-      
+
       if(status == 5) {
         // Put which chunk we are processing into the payload
         std::vector<uint8_t> payload(whichChunk.begin(), whichChunk.end());
@@ -481,7 +512,7 @@ namespace iVeiOTA {
       }
     }
     break;
-    
+
     case Message::OTAStatus.ChunkStatus:
     {
       debug << "Chunk status message" << std::endl;
@@ -499,7 +530,7 @@ namespace iVeiOTA {
         payload.push_back(':');
         if(chunk.orderMatters) payload.push_back('1');
         else payload.push_back('0');
-        
+
         // Null terminate the list
         payload.push_back('\0');
       }
@@ -510,15 +541,15 @@ namespace iVeiOTA {
                                                          chunks.size(), 0, 0, 0, payload)));
     }
     break;
-    
+
     default:
       ret.push_back(Message::MakeNACK(message, 0, "Unknown message subtype"));
       debug << "Unknown subtype in processStatusMessage: " << message.header.subType << std::endl;
     }
-    
+
     return ret;
   }
-  
+
   void OTAManager::initUpdateFunction() {
     debug << "Download thread starting" << std::endl;
     //TODO: This may be dangerous as it creates a power-cycle race condition
@@ -530,25 +561,25 @@ namespace iVeiOTA {
       std::string dest = config.GetDevice(Container::Alternate, Partition::BootInfo);
       debug << "Copying file " << src << " to " << dest << std::endl;
       CopyFileData(dest, src, 0, 0, &cancelUpdate);
-      
+
       debug << "Setting alternate validity to false after copying BI partition" << std::endl;
       bootMgr.SetValidity(Container::Alternate, false);
     }
-    
+
     if(copyRoot) {
       debug << "starting to copy Root" << std::endl;
       std::string src = config.GetDevice(Container::Active, Partition::Root);
       std::string dest = config.GetDevice(Container::Alternate, Partition::Root);
       CopyFileData(dest, src, 0, 0, &cancelUpdate);
     }
-    
+
     if(copySystem) {
       debug << "starting to copy System" << std::endl;
       std::string src = config.GetDevice(Container::Active, Partition::System);
       std::string dest = config.GetDevice(Container::Alternate, Partition::System);
       CopyFileData(dest, src, 0, 0, &cancelUpdate);
     }
-    
+
     // Then we have to clear the cache
     if(clearCache) {
       debug << "clearing the cache" << std::endl;
@@ -578,7 +609,7 @@ namespace iVeiOTA {
     }
     debug << "Thread finished" << std::endl;
   }
-  
+
   bool OTAManager::prepareForUpdate(bool noCopy) {
     // TODO: A better way --
     //  A config file tells what redundant partition types the system has (from the list in support.hh)
@@ -618,7 +649,7 @@ namespace iVeiOTA {
       singleContainerOnly = false;
       clearCache = true;
     }
- 
+
     for(auto chunk: chunks) {
       bool copy = true;
       if(chunk.type == ChunkType::Image) {
@@ -633,11 +664,11 @@ namespace iVeiOTA {
         else if(chunk.dest == Partition::System)   copySystem = false;
       }
     }
-    
+
     debug << Debug::Mode::Info << (copyBI     ? "" : "Not ") << "Copying BootInfo" << std::endl;
     debug << Debug::Mode::Info << (copyRoot   ? "" : "Not ") << "Copying Root"     << std::endl;
-    debug << Debug::Mode::Info << (copySystem ? "" : "Not ") << "Copying System"   << std::endl;    
-    debug << Debug::Mode::Info << (clearCache ? "" : "Not ") << "Clearing Cache"   << std::endl;    
+    debug << Debug::Mode::Info << (copySystem ? "" : "Not ") << "Copying System"   << std::endl;
+    debug << Debug::Mode::Info << (clearCache ? "" : "Not ") << "Clearing Cache"   << std::endl;
     bootMgr.SetValidity(Container::Alternate, false);
 
     // -------------------------------------------------------------------------------------------------------
@@ -648,17 +679,17 @@ namespace iVeiOTA {
     pthread_attr_getstacksize(&attr, &stacksize);
     debug << "Setting stack size: " << pthread_attr_setstacksize(&attr, stacksize * 4) << " ** " << std::endl;
     pthread_attr_getstacksize(&attr, &stacksize);
-    debug << "Stack size is " << stacksize << std::endl; 
+    debug << "Stack size is " << stacksize << std::endl;
     int ret = pthread_create(&copyThread, &attr, &CopyThreadFunction, (void*)this);
     if(ret != 0) {
       debug << Debug::Mode::Failure << "Could not create chunk process thread" << std::endl;
     }
     //////////////////////////////////////////////////////////////////////////////////////////////////////////
-    
+
     debug << "Exiting after thread created" << std::endl;
     return ret == 0;
   }
-  
+
   void OTAManager::processChunk() {
     // Find the chunk we are supposed to process first
     std::string ident = this->whichChunk;
@@ -690,7 +721,7 @@ namespace iVeiOTA {
       debug << "Didn't find the chunk: " << whichChunk << std::endl;
     }
   }
-  
+
   bool OTAManager::processChunkFile(const ChunkInfo &chunk, const std::string &path) {
     bool success = false;
 
@@ -699,7 +730,7 @@ namespace iVeiOTA {
       std::ifstream existTest(path);
       if(!existTest.good()) return false;
     } // end scope to close file
-    
+
     // Then we need to check the hash
     {
       std::string hashValue = GetHashValue(chunk.hashType, path);
@@ -712,10 +743,10 @@ namespace iVeiOTA {
 
     // Then process it based on type
     switch(chunk.type) {
-      
+
       ///////////////////////////////////////////////////////////////////////////
     case ChunkType::Image:
-    {      
+    {
       std::string dest = config.GetDevice(Container::Alternate, chunk.dest);
       uint64_t offset = chunk.pOffset;
       uint64_t size = chunk.size;
@@ -723,7 +754,7 @@ namespace iVeiOTA {
       uint64_t written = CopyFileData(dest, path, offset, size, &cancelUpdate);
       if(written != size) {
         debug << "Didn't write proper amount: " << written << ":" << size << std::endl;
-        return false;        
+        return false;
       }
     }
     success = true;
@@ -742,17 +773,17 @@ namespace iVeiOTA {
           success = false;
           break;
         }
-        
+
         if(chunk.complete) {
           // We have to clear out the old files first
           debug << "Clearing out old files for complete archive on " << dest << std::endl;
           RemoveAllFiles(mount.Path() + "/", true);
         }
       } // unmount and sync filesystem -- not waiting here caused tar to fail
-      
+
       // TODO: Verify that the sleep and unmount/mount is needed.  May be an artifact of previous problem
       sleep(2);
-      
+
       {
         Mount mount(dest, IVEIOTA_MNT_POINT, ftype);
         if(!mount.IsMounted()) {
@@ -760,7 +791,7 @@ namespace iVeiOTA {
           success = false;
           break;
         }
-        
+
         // Then we have to untar it
         // TODO: Check the output of tar for success/failure
         std::string command = "/system/bin/tar -xvv --overwrite -f " + path + " -C " + mount.Path() + "/";
@@ -769,34 +800,37 @@ namespace iVeiOTA {
     }
     success = true;
     break;
-    
+
     ///////////////////////////////////////////////////////////////////////////
     case ChunkType::Script:
     {
+      // Simply invoke the script if we get this far
+      std::string command = path;
+      std::string output = RunCommand(command);
     }
-    success = false;
+    success = true;
     break;
-    
+
     ///////////////////////////////////////////////////////////////////////////
     case ChunkType::File:
     {
       std::string dest = config.GetDevice(Container::Alternate, chunk.dest);
       std::string ftype = config.GetFilesystemType(dest);
-      
+
       Mount mount(dest, IVEIOTA_MNT_POINT, ftype);
       if(!mount.IsMounted()) {
         debug << "Failed to mount device" << std::endl;
         success = false;
         break;
       }
-      
+
       //TODO: I would like to use an internal method, not call out to RunCommand
       std::string command = "cp -f " + path + " " + mount.Path() + "/" + chunk.filePath;
       std::string output = RunCommand(command);
     }
     success = true;
     break;
-    
+
     ///////////////////////////////////////////////////////////////////////////
     case ChunkType::Dummy:
     {
@@ -804,15 +838,15 @@ namespace iVeiOTA {
       success = true;
     }
     break;
-      
+
     default:
       success = false;
       break;
     }
-    
+
     return success;
   }
-  
+
   bool OTAManager::processManifest(const std::string &manifest) {
     // The manifest is a list of chunks in the format
     // ident:type:partition:order:<params_list>:hash_type:hash_value
@@ -853,11 +887,11 @@ namespace iVeiOTA {
       }
       ChunkInfo chunk;
       chunk.processed = false;
-      
+
       chunk.ident = toks[0];
       chunk.type = GetChunkType(toks[1]);
       chunk.dest  = GetPartition(toks[2]);
-      
+
       // Sanity check the type and destination
       if(chunk.type == ChunkType::Unknown || chunk.dest == Partition::Unknown) {
         debug << "Type or destination incorrect: " <<
@@ -865,28 +899,28 @@ namespace iVeiOTA {
           static_cast<int>(chunk.dest) << std::endl;
         continue;
       }
-      
+
       if((chunk.type == ChunkType::Image && toks.size() < 9) ||
          (chunk.type == ChunkType::File && toks.size() < 7) ||
          (chunk.type == ChunkType::Archive && toks.size() < 7)) {
         debug << "Incorrect number of params for " << line << " #" << toks.size() << std::endl;
         continue;
       }
-      
+
       // Check to see if we have a specific order we have to process this chunk in
       // TODO: proper handling of this needs to be implemented
       chunk.orderMatters = (toks[3].length() > 0 && toks[3][0] == '1') ? true : false;
-      
+
       // Get the hash information
       chunk.hashType = GetHashAlgorithm(toks[toks.size() - 2]);
       chunk.hashValue = toks[toks.size() - 1];
       // Sanity check it
-      if(chunk.hashType == HashAlgorithm::Unknown || 
+      if(chunk.hashType == HashAlgorithm::Unknown ||
          (chunk.hashType == HashAlgorithm::None && chunk.type != ChunkType::Dummy)) {
         debug << "Incorrect type of hash type" << std::endl;
         continue;
       }
-      
+
       // Then get the chunk specific stuff
       switch(chunk.type) {
       case ChunkType::Image:
@@ -898,28 +932,28 @@ namespace iVeiOTA {
       case ChunkType::Archive:
         chunk.complete = ((toks[4].length() > 0) && (toks[4][0] == '1'));
         break;
-        
+
       case ChunkType::Dummy:
         chunk.dest = Partition::None;
         // fall through to set filepath
       case ChunkType::File:
         chunk.filePath = toks[4];
         break;
-        
+
       case ChunkType::Script:
-        debug << Debug::Mode::Err << "Script type not yet handled" << std::endl;
-        continue; // not handled yet
-        
+        //nothing special to do for script chunks
+        break;
+
       default:
         // Don't process this
         debug << Debug::Mode::Err << "Unknown chunk type: " << ToString(chunk.type) << std::endl;
         continue;
       }
-      
+
       // If we made it here, then we have a valid chunk
       debug << "maxIdentLength : " << maxIdentLength << " new ident length: " << chunk.ident.length() << std::endl;
       if(chunk.ident.length() > maxIdentLength) maxIdentLength = chunk.ident.length();
-      
+
       debug << Debug::Mode::Info << "Found chunk: " << chunk.ident << ":" << iVeiOTA::ToString(chunk.dest) << std::endl;
       chunks.push_back(chunk);
     } // end for(line : lines)
@@ -929,7 +963,7 @@ namespace iVeiOTA {
       debug << Debug::Mode::Err << "Invalid manifest" << std::endl;
       return false;
     }
-    
+
     // This seems to be a valid manifest, so we should save it to the cache
     try {
       std::ofstream manifest_cache(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
@@ -947,7 +981,7 @@ namespace iVeiOTA {
     // Then we have to clear out our other state
     state = OTAState::Canceling;
   }
-  
+
   bool OTAManager::Process() {
     // Do anything that we need to check on periodially
     if(joinCopyThread && copyThread != -1) {
@@ -955,7 +989,7 @@ namespace iVeiOTA {
       pthread_join(copyThread, NULL);
       copyThread = -1;
       joinCopyThread = false;
-      
+
       if(!cancelUpdate) {
         bool allDone = true;
         for(auto chunk : chunks) {
@@ -975,7 +1009,7 @@ namespace iVeiOTA {
       // update our data about this chunk
       processingChunk = false;
       whichChunk = "";
-      intChunkPath = "";    
+      intChunkPath = "";
 
       // We should check to see if all chunks have been processed now
       if(!cancelUpdate) {
@@ -985,7 +1019,7 @@ namespace iVeiOTA {
           if(!chunk.processed) allProcessed = false;
           if(!chunk.succeeded) allSucceeded = false;
         }
-        
+
         if(allProcessed && allSucceeded) state = OTAState::AllDone;
         else if(allProcessed) state = OTAState::AllDoneFailed;
       }
@@ -1006,10 +1040,10 @@ namespace iVeiOTA {
       RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/manifest");
       RemoveFile(std::string(IVEIOTA_CACHE_LOCATION) + "/journal");
       RunCommand("sync"); // We also have to sync the filesystem so we can reboot
-      
+
       state = OTAState::Idle;
     }
-    
+
     return true;
   }
 };
