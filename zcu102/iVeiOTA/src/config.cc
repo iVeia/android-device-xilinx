@@ -162,13 +162,20 @@ namespace iVeiOTA {
   }
 
   bool GlobalConfig::Valid() const {
-    // We consider a system valid if it has an active and an alternate container
-    if(active.length() > 0 && active != "None" &&
-       alternate.length() > 0 && alternate != "None") {
-      return true;
-    } else {
-      return false;
-    }
+    if(
+       // We will consider a system valid if we have any targets to download to
+       (partitions.at(Container::Single).size() > 0) ||
+       // We consider an OTA system valid if it has an active and an alternate container
+       (active.length() > 0 && active != "None" &&
+        alternate.length() > 0 && alternate != "None")
+       )
+      {
+        return true;
+      }
+    else
+      {
+        return false;
+      }
   }
   
   std::string GlobalConfig::GetHashAlgorithmProgram(HashAlgorithm algo) {

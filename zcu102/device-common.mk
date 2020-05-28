@@ -61,6 +61,7 @@ PRODUCT_COPY_FILES +=  \
 PRODUCT_PACKAGES += iVeiOTA ciVeiOTA iecho ciecho
 PRODUCT_COPY_FILES += \
 	device/xilinx/zcu102/iVeiOTA/config/iVeiOTA.conf:system/etc/iVeiOTA.conf \
+	device/xilinx/zcu102/iVeiOTA/config/iVeiOTA-noota.conf:system/etc/iVeiOTA-noota.conf \
 	device/xilinx/zcu102/iVeiOTA/config/fstab.zcu102.a:root/fstab.zcu102.a \
 	device/xilinx/zcu102/iVeiOTA/config/fstab.zcu102.b:root/fstab.zcu102.b \
 	device/xilinx/zcu102/iVeiOTA/config/uEnv.txt:boot/uEnv.txt \

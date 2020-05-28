@@ -9,6 +9,8 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <array>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "ota_manager.hh"
 #include "config.hh"
@@ -213,17 +215,6 @@ namespace iVeiOTA {
           if(processManifest(manifest)) {
             // If we are here, then we have a proper manifest and can continue with the update
 
-            //check special case of single chunk with script type
-            //this is what we use for ChillUPS updates... hack this in for now
-            if ((chunks.size() == 1) && (chunks.at(0).type == ChunkType::Script))
-            {
-              //do special processing for scripts (no copy of anything)
-              //just set fake state to make it look as if all is well
-              debug << "state -> InitDone (single 'Script' chunk, no file system copies needed)" << std::endl;
-              state = OTAState::InitDone;
-              ret.push_back(Message::MakeACK(message));
-            }
-            else
             {
               debug << "state -> preparing" << std::endl;
               state = OTAState::Preparing;
@@ -265,16 +256,6 @@ namespace iVeiOTA {
         for(auto chunk : chunks) { if(chunk.processed == true) completed++; }
         debug << Debug::Mode::Info << "Continuing an update with " << completed << " chunks completed" << std::endl;
 
-        //hack this in to cover resumption of Script chunk special case
-        //not sure if this will work but can test
-        if ((chunks.size() == 1) && (chunks.at(0).type == ChunkType::Script))
-        {
-          //do special processing for scripts (no copy of anything)
-          //just set fake state to make it look as if all is well
-          debug << "Continuing update without copying (single 'Script' chunk, no file system copies needed)" << std::endl;
-          ret.push_back(Message::MakeACK(message));
-        }
-        else
         {
           if(prepareForUpdate(completed > 0)) {
             ret.push_back(Message::MakeACK(message));
@@ -421,12 +402,7 @@ namespace iVeiOTA {
           ret.push_back(Message::MakeNACK(message, 0, "Internal error"));
         } // end switch(state)
       } else {
-        //hack in the special Script case here to support ChillUPS
-        if ((chunks.size() == 1) && (chunks.at(0).type == ChunkType::Script))
-        {
-          debug << Debug::Mode::Info << "Skipping container switching as this is a single-chunk 'Script' update" << std::endl;
-        }
-        else if(singleContainerOnly) {
+        if(singleContainerOnly) {
           debug << Debug::Mode::Info << "Skipping container switching as this is a single partition download" << std::endl;
         } else {
           int currentRev = bootMgr.GetRev(Container::Active);
@@ -531,6 +507,12 @@ namespace iVeiOTA {
         if(chunk.orderMatters) payload.push_back('1');
         else payload.push_back('0');
 
+        if(chunk.type == ChunkType::Script) {
+          payload.push_back(':');
+          std::string ret_val = std::to_string(chunk.exitCode);
+          for(char c : ret_val) payload.push_back(c);
+        }
+        
         // Null terminate the list
         payload.push_back('\0');
       }
@@ -644,7 +626,11 @@ namespace iVeiOTA {
     if(singleOnly && (singleCount == chunks.size())) {
       debug << Debug::Mode::Info << "All chunks are on single partitions, no need to switch" << std::endl;
       singleContainerOnly = true;
+      
       clearCache = false;
+      copyBI     = false;
+      copyRoot   = false;
+      copySystem = false;
     } else {
       singleContainerOnly = false;
       clearCache = true;
@@ -708,6 +694,9 @@ namespace iVeiOTA {
         success = false;
       }
 
+      // THis isn't a real good way to do this.  We need to refactor the processing somewhat
+      if(chunk->type == ChunkType::Script) chunk->exitCode = lastExitCode;
+
       try {
         debug << "Succeeded in processing chunk: " << chunk->ident << std::endl;
         std::ofstream journal(std::string(IVEIOTA_CACHE_LOCATION) + "/journal", std::ios::out | std::ios::app);
@@ -716,6 +705,7 @@ namespace iVeiOTA {
       } catch(...) {
         //TODO: Implement logging
         // Failed to write to the journal -- can't resume a failed update
+        debug << Debug::Mode::Failure << "Failed to write to the journal" << std::endl;
       }
     } else {
       debug << "Didn't find the chunk: " << whichChunk << std::endl;
@@ -727,6 +717,7 @@ namespace iVeiOTA {
 
     // First, see if the file exists
     {
+      debug << "File " << path << " doesn't exist" << std::endl;
       std::ifstream existTest(path);
       if(!existTest.good()) return false;
     } // end scope to close file
@@ -740,6 +731,8 @@ namespace iVeiOTA {
         if(chunk.type != ChunkType::Dummy) return false;
       }
     }
+
+    debug << "Processing " << ToString(chunk.type) << ":" << path << std::endl;
 
     // Then process it based on type
     switch(chunk.type) {
@@ -806,7 +799,16 @@ namespace iVeiOTA {
     {
       // Simply invoke the script if we get this far
       std::string command = path;
-      std::string output = RunCommand(command);
+      int status;
+      int exitCode;
+      std::string output = RunCommandWithRet("/system/bin/sh " + command, status);
+      exitCode = WEXITSTATUS(status);
+      lastExitCode = exitCode;
+
+      if(!WIFEXITED(status)) {
+        success = false;
+        break;
+      }
     }
     success = true;
     break;

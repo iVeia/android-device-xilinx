@@ -43,7 +43,7 @@ namespace iVeiOTA {
       AllDoneFailed     // All chunks have been processed but some failed
     };
     OTAState state; // Should only get written in the main thread
-    inline std::string ToString(ChunkType type) {
+    inline std::string ToString(const ChunkType type) {
       switch(type) {
       case ChunkType::Image:   return "Image";   break;
       case ChunkType::Archive: return "Archive"; break;
@@ -84,7 +84,10 @@ namespace iVeiOTA {
                                //  filesystem before unpacking
 
       // -------------- For File chunk types
-      std::string filePath;    // Destination path for file chunks      
+      std::string filePath;    // Destination path for file chunks
+
+      // -------------- For script chunks
+      int exitCode;          
     };
 
     // For handling the processing of chunks
@@ -93,6 +96,7 @@ namespace iVeiOTA {
     bool joinProcessThread;   // True if the processing thread has completed and needs to be join()ed
     std::string whichChunk;   // Which chunk we are processing
     std::string intChunkPath; // The path to the chunk file, for internal use
+    int lastExitCode;         // The last exit code of a script
     
     // For the handling of update initialization -------------------------------
     pthread_t copyThread; // The thread that does the initialization

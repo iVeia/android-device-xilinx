@@ -127,14 +127,18 @@ namespace iVeiOTA {
         imm[0] - The number of chunks needed for this update
 
         Payload: 
-      */       
+      */
       constexpr static uint8_t ChunkStatus       = 0x20;
+
+      //! Get the status of a single chunk
+      constexpr static uint8_t SingleChunkStatus = 0x22;
       std::string toString(uint8_t sub) {
         switch(sub) {
-        case OTAStatus:    return "OTAStatus::OTAStatus";
-        case UpdateStatus: return "OTAStatus::UpdateStatus";
-        case ChunkStatus:  return "OTAStatus::ChunkStatus";
-        default:           return "OTAStatus::Invalid";
+        case OTAStatus:         return "OTAStatus::OTAStatus";
+        case UpdateStatus:      return "OTAStatus::UpdateStatus";
+        case ChunkStatus:       return "OTAStatus::ChunkStatus";
+        case SingleChunkStatus: return "OTAStatus::SingleChunkStatus";
+        default:                return "OTAStatus::Invalid";
         }
       }
     } OTAStatus;

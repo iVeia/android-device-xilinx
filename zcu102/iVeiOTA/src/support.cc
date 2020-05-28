@@ -23,9 +23,8 @@ namespace iVeiOTA {
     else if(name == "qspi")      return Partition::QSPI;
     else if(name == "data")      return Partition::Data;
     else if(name == "cache")     return Partition::Cache;
-    
-    // Dont have an entry here for Partition::None.  It shouldn't be able to be
-    //  created from a config file.  Just internally
+
+    else if(name == "none")      return Partition::None;
     
     else                         return Partition::Unknown;
   }
@@ -58,7 +57,37 @@ namespace iVeiOTA {
     if(toks.size() >= 2 && toks.size() < 4) return toks[0];
     else return "";    
   }
+
+  std::string RunCommandWithRet(std::string command, int &ret) {
+    int retVal = -1;
     
+    // Where to keep the response from the program we are running
+    std::array<char, 256> buffer;
+    std::string result;
+    debug << "Running command with return value: " << command << std::endl;
+
+    // Run the program and open a pipe to it to get the output
+    debug << "Command string is " << command.c_str() << std::endl;
+    FILE *pipe = popen(command.c_str(), "r");
+    if (!pipe) {
+      debug << Debug::Mode::Err << "Failed to open pipe to run command " << command << std::endl << Debug::Mode::Info;
+      return "";
+    }
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+      result += buffer.data();
+    }
+    retVal = pclose(pipe);
+    debug << "pclose returned " << retVal;
+    
+    if(retVal == -1) {
+      debug << Debug::Mode::Err << "Command returned -1.  Unsure if that is return value or error." << std::endl;
+    }
+    ret = retVal;
+    
+    debug << Debug::Mode::Info << "Run command: " << command << " exited with " << ret << " with output " << result << std::endl;
+    return result;
+  }
+  
   std::string RunCommand(std::string command) {
     // Where to keep the response from the program we are running
     std::array<char, 256> buffer;
@@ -329,6 +358,7 @@ namespace iVeiOTA {
     // Mount the device onto path
     debug << Debug::Mode::Info << "Trying to mount " << dev.c_str() << " onto " << path.c_str() << " with type " << type.c_str() << std::endl;
     int res = mount(dev.c_str(), path.c_str(), type.c_str(), 0, 0);
+    // TODO: If failed, we may need to run e2fsck
     if(res != 0) {
       // We failed to mount the filesystem
       debug << Debug::Mode::Err << "Failed to mount: " << res << ":" << strerror(errno) << std::endl << Debug::Mode::Info;

@@ -80,6 +80,7 @@ namespace iVeiOTA {
   std::string GetHashValue(HashAlgorithm hashType, const std::string &filePath);
   
   std::string RunCommand(std::string command);
+  std::string RunCommandWithRet(std::string command, int &ret);
 
   int RemoveFile(const std::string &path);
   int RemoveAllFiles(const std::string &path, bool recursive);
