@@ -145,11 +145,13 @@ echo "<<iVeia_recovery:update:part,.5>>"
 echo "========= formating BOOT partition"
 mkfs.vfat -F 32 -n BOOT ${diskname}${prefix}1
 
+# Boot info partitions get written by u-boot and so can't
+#  have metadata checksumming enabled
 echo "<<iVeia_recovery:update:part,.6>>"
 echo "========= formating BootInfoA partition"
-mkfs.ext4 -F -L BIA ${diskname}${prefix}5
+mkfs.ext4 -O ^metadata_csum -F -L BIA ${diskname}${prefix}5
 echo "========= formating BootInfoB partition"
-mkfs.ext4 -F -L BIB ${diskname}${prefix}9
+mkfs.ext4 -O metadata_csum -F -L BIB ${diskname}${prefix}9
 
 echo "<<iVeia_recovery:update:part,.65>>"
 echo "========= formating ROOTA partition"
