@@ -1,0 +1,30 @@
+#!/bin/bash
+
+OUT="${ANDROID_PRODUCT_OUT}"
+if [ -z "${OUT}" ]; then
+    echo "ERROR: Android environment/lunch need to be setup"
+    exit
+fi
+
+FILES=(
+    boot
+    bi
+    fsbl.bin
+    mksdcard.sh
+    mksdcard-noota.sh
+    root
+    system.img
+    )
+
+cp "${OUT}/boot/Image" "${OUT}/bi/"
+cp "${OUT}/boot/iveia-helios-z8.dtb" "${OUT}/bi"
+
+#
+# tar up with transformed SDHOME top level dir
+#
+FILES_WITH_UPDIR=()
+for f in "${FILES[@]}"; do
+    FILES_WITH_UPDIR+=("${TARGET_PRODUCT}/$f")
+done
+tar czvf "${OUT}/SDHOME.tar.gz" --transform 's,^zcu102/,SDHOME/,' --show-stored-names \
+    -C "${OUT}/.." "${FILES_WITH_UPDIR[@]}"
