@@ -18,6 +18,7 @@
 #include <linux/videodev2.h>
 
 #include <fstream>
+#include <tuple>
 
 #include "camera.hh"
 #include "debug.hh"
@@ -50,6 +51,20 @@ namespace iv4 {
     uint16_t data_size;
     uint8_t  command;
   };
+#define GENCP_STRING_BUFFER_SIZE        (64)
+#define STRING_TERMINATION              (1)
+#define BDI_MAGIC                       (84513200)
+  struct basler_device_information {
+    uint32_t _magic;
+    uint32_t gencpVersion;
+    uint8_t  manufacturerName[GENCP_STRING_BUFFER_SIZE + STRING_TERMINATION];
+    uint8_t  modelName[GENCP_STRING_BUFFER_SIZE + STRING_TERMINATION];
+    uint8_t  familyName[GENCP_STRING_BUFFER_SIZE + STRING_TERMINATION];
+    uint8_t  deviceVersion[GENCP_STRING_BUFFER_SIZE + STRING_TERMINATION];
+    uint8_t  manufacturerInfo[GENCP_STRING_BUFFER_SIZE + STRING_TERMINATION];
+    uint8_t  serialNumber[GENCP_STRING_BUFFER_SIZE + STRING_TERMINATION];
+    uint8_t  userDefinedName[GENCP_STRING_BUFFER_SIZE + STRING_TERMINATION];
+  };
 
   // TODO: C++-ism desired here
 #define CLEAR(x) memset(&(x), 0, sizeof(x))  
@@ -64,6 +79,24 @@ namespace iv4 {
     return r;
   }
 
+  static int basler_get_info(const std::string &subdev, struct basler_device_information *info) {
+    int media_fd = open(subdev.c_str(), O_RDWR);
+    struct v4l2_ext_controls ext_controls;
+    struct v4l2_ext_control  ext_control;
+
+    ext_control.id = 0x981003;   // Basler device info
+    ext_control.size = sizeof(struct basler_device_information);
+    ext_control.string = (char*)info;//
+    ext_controls.ctrl_class = 0; // User class
+    ext_controls.count = 1;      // Always just one control at a time
+    ext_controls.controls = &ext_control;
+    int ret2 = ioctl(media_fd, VIDIOC_G_EXT_CTRLS, &ext_controls);
+  
+    close(media_fd);
+
+    return ret2;
+  }
+  
   static int basler_read(int fd, uint16_t addr, uint8_t *dat, uint16_t dat_size) {
     struct v4l2_ext_controls ext_controls;
     struct v4l2_ext_control  ext_control;
@@ -119,17 +152,90 @@ namespace iv4 {
     return ret;
   }
 
-  void CameraInterface::InitializeBaslerCamera(const std::string &playbackFile, const std::string &mediaDev) {
+  std::tuple<int,int> CameraInterface::InitializeBaslerCamera(int mediaDevNum) {
 
-    // First we have to setup the resolution and format of the pipeline
+    std::string mediaSubDev = "";
+    if(mediaDevNum == 0) {
+      mediaSubDev = "/dev/v4l-subdev0";      
+    }  else if(mediaDevNum == 1) {
+      debug << Debug::Mode::Failure << "Media device " << mediaDevNum << " not yet supported" << std::endl;
+      return std::tuple<int,int>(0,0);
+    } else {
+      debug << Debug::Mode::Failure << "Media device " << mediaDevNum << " not known" << std::endl;
+      return std::tuple<int,int>(0,0);
+    }
+
+    // First we have to get the type of camera that is plugged in
+    struct basler_device_information binfo;
+    int iret = basler_get_info(mediaSubDev, &binfo);
+    std::string camModel = std::string( (char*)binfo.modelName);
+    debug << "Got basler info: " << iret << std::endl <<
+      "\t model:  " << (char*)binfo.modelName << std::endl <<
+      "\t family: " << (char*)binfo.familyName << std::endl;
+
+    int cameraType = 0;
+    if(camModel.find("daA2500-60") != std::string::npos) cameraType = 1;
+    else if(camModel.find("daA4200-30") != std::string::npos) cameraType = 2;
+    else {
+      debug << Debug::Mode::Failure << "Unrecognized camera type" << std::endl;
+      return std::tuple<int,int>(0,0);
+    }
+       
+    // Then we have to setup the resolution and format of the pipeline
     // TODO: This is hardcoded.  That is TERRIBLE.  This needs to be more
     //       generic / configurable when we have time.  If the cameras change locations, or the device
     //       tree moves dev nodes around this will fail horribly.
-    RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":0 [fmt:UYVY8_1X16/4208x3120 field:none]'");
-    RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":1 [fmt:UYVY8_1X16/4208x3120 field:none]'");
-    RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"iveia-basler-mipi 7-0036\":0 [fmt:UYVY8_1X16/4208x3120 field:none]'");
-    RunCommand("/system/bin/v4l2-ctl -d /dev/video0 --set-fmt-video=width=4208,height=3120,pixelformat='UYVY'");
+    std::string format = "";
+    std::string vformat = "";
+    std::string width = "";
+    std::string height = "";
+    switch(cameraType) {
+    case 1:
+      format = "UYVY8_1X16";
+      vformat = "UYVY";
+      width = "2592";
+      height = "1944";
+      break;
+    case 2:
+      format = "UYVY8_1X16";
+      vformat = "UYVY";
+      width = "4208";
+      height = "3120";
+      break;
+    default:
+      debug << Debug::Mode::Failure << "Unknown camera type! " << cameraType << std::endl;
+      return std::tuple<int,int>(0,0);
+    }
+
+    if(mediaDevNum == 0) {
+      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"iveia-basler-mipi 7-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/v4l2-ctl -d /dev/video0 --set-fmt-video=width="+width+",height="+height+",pixelformat='"+vformat+"'");
+    }
+
+    // 
     
+    switch(cameraType) {
+    case 1:
+      PlaybackBaslerFile("/system/etc/basler_5MP.playback", mediaSubDev);
+      return  std::tuple<int,int>(2592,1944);
+      break;
+    case 2:
+      PlaybackBaslerFile("/system/etc/basler_14MP.playback", mediaSubDev);
+      return  std::tuple<int,int>(4208, 3120);
+      break;
+    default:
+      // This should have been handled already
+      break;
+    }
+
+    return std::tuple<int,int>(0,0);
+  }
+
+
+  //TODO: Check to make sure these files exist
+  void CameraInterface::PlaybackBaslerFile(std::string playbackFile, std::string mediaDev) {
     // Next we have to open our playback file and sent it to the camera
     std::ifstream playback(playbackFile.c_str());
 

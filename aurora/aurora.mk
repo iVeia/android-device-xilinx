@@ -18,7 +18,7 @@
 
 # Inherit device specific configurations
 $(call inherit-product, device/xilinx/aurora/device-common.mk)
-$(call inherit-product, device/xilinx/aurora/aurora/device-zcu102.mk)
+$(call inherit-product, device/xilinx/aurora/aurora/device-aurora.mk)
 
 # Inherit full base product
 $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base.mk)

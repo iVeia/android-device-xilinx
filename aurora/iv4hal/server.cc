@@ -69,11 +69,12 @@ int main(int argc, char ** argv) {
   // Start out with the 13MP camera at /dev/video0
   // TODO: Most of this is hard-coded and needs to be configurable
   //       At the moment adding more cameras is hard
-  CameraInterface::InitializeBaslerCamera("/system/etc/basler_out.csv",
-                                          "/dev/v4l-subdev0");
+  std::tuple<int,int> res0 = CameraInterface::InitializeBaslerCamera(0);
 
   // And create all our cameras - just one for now
-  CameraInterface cam0("/dev/video0", 4208, 3120);
+  CameraInterface cam0("/dev/video0", std::get<0>(res0), std::get<1>(res0));
+  debug << Debug::Mode::Info << "Initialized /dev/video0 with resolution " <<
+    std::get<0>(res0) << "," <<  std::get<1>(res0) << std::endl;
   std::unique_ptr<Image> activeImage0;
   
   // Create our listening socket

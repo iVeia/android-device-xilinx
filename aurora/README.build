@@ -1,0 +1,41 @@
+The kernel and device/xilinx branches are different.  You will want to checkout the dev/mwalter/aurora-basler branch
+of both of those repositories.
+
+============================================================
+You will need to flash a specific FSBL to run this TRD based Android creation
+
+The FSBL files are in device/xilinx/aurora/aurora and you can flash them in the normal way
+(e.g. program_flash -f BOOT.BIN -offset 0 -flash_type qspi_single -fsbl fsbl_3.elf -cable type xilinx_tcf url TCP:127.0.0.1:3121)
+
+(BOOT.BIN and fsbl_3.elf are the files)
+
+============================================================
+When running lunch, select aurora-eng
+
+If you run into trouble building external/v4l-utils, I have provided a copy of a working source tree at
+device/xilinx/aurora/v4l-utils-14.2-working
+The v4l-utils for the Mentor/Xilinx Android port are provided by Mentor and are supposed to work, but
+I have had some issues (mostly the order things get built in, so if you re-run the build a few times
+it eventually works).  So if you run into trouble with that you should be able to just copy my version
+over to /external/v4l-utils.
+
+============================================================
+To create the SD-Card:
+Format the card in the following way
+Parition:  FS-Type:    Size:            Purpose
+1          FAT         1G               boot
+2          ext4        1G               /root
+3          extended    20G              
+4          ext4        remaining        /data
+5          ext4        10G              /system
+6          ext4        10G              /cache
+
+The files in out/target/product/aurora/boot should be placed into the boot partition
+A set of files from a working device have been placed in device/xilinx/aurora/aurora
+in case a problem arises.
+
+The default is to boot using a ramdisk, so the root partition does not matter
+The FSBL burned earlier defaults to running the boot.scr script to boot the system.  You
+can look at the contents of that script to see how the boot proceeds.
+
+out/target/product/aurora/system.img should be copied to the system partition using dd

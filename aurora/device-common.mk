@@ -51,6 +51,12 @@ PRODUCT_PACKAGES += libv4l2 v4l2-ctl libv4l2subdev libmediactl media-ctl
 #    device/xilinx/aurora/ssh/sshd_config:system/etc/ssh/sshd_config \
 #    device/xilinx/aurora/ssh/empty:root/var/run/ssh/empty/empty \
 
+PRODUCT_PACKAGES += iv_v4_hal iv_v4_hal_client
+PRODUCT_COPY_FILES += \
+	device/xilinx/aurora/iv4hal/config/basler_14MP.playback:system/etc/basler_14MP.playback \
+	device/xilinx/aurora/iv4hal/config/basler_5MP.playback:system/etc/basler_5MP.playback
+
+
 ## OTA stuff -- disable until we get more stuff working
 #PRODUCT_PACKAGES += iVeiOTA ciVeiOTA iecho ciecho
 #PRODUCT_COPY_FILES += \

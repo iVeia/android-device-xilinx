@@ -4,6 +4,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <tuple>
 
 namespace iv4 {
   // TODO: This is kind of ugly.  Is there a way to handle typed enum's as bitfields?
@@ -70,8 +71,8 @@ namespace iv4 {
     std::unique_ptr<Image> GetRawImage();
 
     
-    static void InitializeBaslerCamera(const std::string &playbackFile,
-                                       const std::string &mediaDev);
+    static std::tuple<int,int> InitializeBaslerCamera(int mediaDevNum);
+    static void PlaybackBaslerFile(std::string playbackFile, std::string mediaDev);
     
   private:
     int _width, _height;
