@@ -35,8 +35,15 @@ The files in out/target/product/aurora/boot should be placed into the boot parti
 A set of files from a working device have been placed in device/xilinx/aurora/aurora
 in case a problem arises.
 
+*NOTE* You will have to rename iveia-aurora-basler.dtb to iveia-aurora.dtb
+Look at the contents of boot.scr to see how the boot process works
+
 The default is to boot using a ramdisk, so the root partition does not matter
 The FSBL burned earlier defaults to running the boot.scr script to boot the system.  You
 can look at the contents of that script to see how the boot proceeds.
+
+The uboot.env (which gets loaded by u-boot) contains a command to run the script
+mystuff=load mmc 0:1 0x02000000 boot.scr ; source 0x02000000
+
 
 out/target/product/aurora/system.img should be copied to the system partition using dd
