@@ -1,8 +1,8 @@
-The kernel and device/xilinx branches are different.  You will want to checkout the dev/mwalter/aurora-basler branch
-of both of those repositories.
+The kernel and device/xilinx branches are different from our standard Android build.  You will want to checkout
+the dev/mwalter/aurora-basler branch of both of those repositories.
 
 ============================================================
-You will need to flash a specific FSBL to run this TRD based Android creation
+You will need to flash a specific FSBL to run this TRD-based Android system
 
 The FSBL files are in device/xilinx/aurora/aurora and you can flash them in the normal way
 (e.g. program_flash -f BOOT.BIN -offset 0 -flash_type qspi_single -fsbl fsbl_3.elf -cable type xilinx_tcf url TCP:127.0.0.1:3121)
@@ -14,6 +14,7 @@ When running lunch, select aurora-eng
 
 If you run into trouble building external/v4l-utils, I have provided a copy of a working source tree at
 device/xilinx/aurora/v4l-utils-14.2-working
+
 The v4l-utils for the Mentor/Xilinx Android port are provided by Mentor and are supposed to work, but
 I have had some issues (mostly the order things get built in, so if you re-run the build a few times
 it eventually works).  So if you run into trouble with that you should be able to just copy my version
