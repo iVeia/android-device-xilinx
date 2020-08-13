@@ -33,6 +33,7 @@ void signalHandler(int sig) {
   case SIGPIPE:
     // We get a broken pipe when the client disconnects.  This is expected and we can safely ignnore it
     //  we do have to close the client socket when it happens though
+    // We do not have a way - at the moment - to differentiate between the event socket and the comm socket
     debug << Debug::Mode::Info << "sigpipe received: doing nothing" << std::endl;
     brokenPipe = true;
     break;
@@ -64,22 +65,30 @@ int main(int argc, char ** argv) {
 
   bool initialized = false;
 
-  // We need to initialize our cameras here
+  // Create all our cameras -
+  //   Order matters here, as we interact with user applications via an index
+  //   TODO: Add a string identifier to each camera?
+  //             Not sure if that is really needed as this is a very specific application and doesn't
+  //             reeally need to be generic
+  std::vector<CameraInterface> cameras;
 
-  // Start out with the 13MP camera at /dev/video0
-  // TODO: Most of this is hard-coded and needs to be configurable
-  //       At the moment adding more cameras is hard
+  // Camera0 First
   std::tuple<int,int> res0 = CameraInterface::InitializeBaslerCamera(0);
-
-  // And create all our cameras - just one for now
-  CameraInterface cam0("/dev/video0", std::get<0>(res0), std::get<1>(res0));
-  debug << Debug::Mode::Info << "Initialized /dev/video0 with resolution " <<
+  cameras.push_back(CameraInterface("/dev/video0",
+                                    std::get<0>(res0),
+                                    std::get<1>(res0)));
+  debug << Debug::Mode::Info << "Initialized /dev/video0 " << (void*)&cameras.back() << "with resolution " <<
     std::get<0>(res0) << "," <<  std::get<1>(res0) << std::endl;
+  // Next Camera would go here
+  
+
+  // TODO: Keep track of images for now, but we will be moving to a streaming system later
   std::unique_ptr<Image> activeImage0;
   
   // Create our listening socket
-  SocketInterface server([&server, &cam0, &activeImage0, &initialized](const Message &message) {
+  SocketInterface server([&server, &cameras, &initialized](const Message &message) {
     debug << "Message received: " << message.header.toString() << std::endl;
+    
     std::vector<std::unique_ptr<Message>> resp;
 
     // We handle management messages here ourselves
@@ -93,10 +102,13 @@ int main(int argc, char ** argv) {
       resp.push_back(std::unique_ptr<Message>(new Message(Message::Management, Message::Management.Initialize,
                                                           0, 0, 0, rev)));
       if(!initialized) {
-        debug << "Initializing camera 0" << std::endl;
-        cam0.InitializeV4L2();
+        debug << "Initializing " << cameras.size() << " cameras" << std::endl;
+        for(CameraInterface &cam : cameras) {
+          cam.InitializeV4L2();
+          debug << "Initialized camera " << (void*)&cam << std::endl;
+        }
       } else {
-        // We are trying to initialize when we already are.  No harm there?
+        // We are trying to initialize when we already are.  No harm there?        
       }
 
       // Keep track of the fact that we have been initialized
@@ -107,60 +119,16 @@ int main(int argc, char ** argv) {
     } else {
       // Otherwise we pass the message to the appropriate consumer
       switch(message.header.type) {
-        // TODO: This should go in a manager somwhere.  Big, long, switch/if/else
-        //       statements are horrible
       case Message::Image:
-        debug << "Processing Image message" << std::endl;
-        switch(message.header.subType) {
-        case Message::Image.CaptureImage:
-        case Message::Image.GetImage:
-          {
-            int wcam = message.header.imm[0];
-            if(wcam != 0) {
-              resp.push_back(Message::MakeNACK(message, 0, "Invalid camera"));
-            } else {
-              int itype = message.header.imm[1];
-              // TODO: Need a better way to handle types
-              if(itype != 0x01) {
-                resp.push_back(Message::MakeNACK(message, 0, "Type not supported yet"));                
-              } else {
-                // If we are here, we actually want to capture an image!
-                if(message.header.subType == Message::Image.CaptureImage) {
-                  activeImage0 = cam0.GetRawImage();
-                  debug << "Captured an image: " << activeImage0.get() << std::endl;
-                  resp.push_back(Message::MakeACK(message));
-                } else if(activeImage0 != nullptr) {
-                  // Has to be getimage, or else we won't be in this case
-                  int imageSize = activeImage0->Size();
-                  int w = activeImage0->Width();
-                  int h = activeImage0->Height();
-                  debug << "Getting image: " << w << ":" << h << "(" << imageSize << ")" << endl;
-
-                  uint32_t res = ((w<<16) & 0xFFFF0000) | (h & 0x0000FFFF);
-                  uint32_t msgs = 0x00010001; // At the moment we only send one message / image
-                  uint32_t itype = ToInt(activeImage0->Type());
-                  
-                  std::vector<uint8_t> sendDat;
-                  activeImage0->GetData(sendDat);
-                  resp.push_back(std::unique_ptr<Message>(new Message(Message::Image,
-                                                                      Message::Image.SendImage,
-                                                                      0, // camera number
-                                                                      itype,
-                                                                      res, msgs,
-                                                                      sendDat)));
-                } else {
-                  resp.push_back(Message::MakeNACK(message, 0, "No active image to get"));
-                }
-              }
-            }
-          } // end case CaptureImage / GetImage
-          break;
-        case Message::Image.ContinuousCapture:
-          resp.push_back(Message::MakeNACK(message, 0, "Continuous capture not yet supported"));
-          break;
-        default:
-          resp.push_back(Message::MakeNACK(message, 0, "Unknown Image subtype"));
-        } // Switch over image subtype
+        {
+          debug << "Processing Image message" << std::endl;
+          int wcam = message.header.imm[0];
+          if(wcam >= (int)cameras.size()) {              
+            resp.push_back(Message::MakeNACK(message, 0, "Invalid camera"));
+          } else {
+            resp.push_back(cameras[wcam].ProcessMessage(message));
+          }
+        } // ------------ End case Message::Image ------------
         break;
         
       default:
@@ -184,6 +152,11 @@ int main(int argc, char ** argv) {
     }
   }, true);
 
+  SocketInterface eventServer([] (const Message &msg) {
+    //  What to do?  This interface is for sending async events to the client
+    //  We should not be getting messages on it...
+  }, true, IV4HAL_EVENT_SOCK_NAME);
+
   // Our event loop
   bool done = false;
   while(!exiting) {
@@ -191,18 +164,80 @@ int main(int argc, char ** argv) {
     // Check to see if we have been signaled to stop, and if so kill the manager and the server
     if(exiting && !done) {
       server.Stop();
+      eventServer.Stop();
       done = true;
     }
 
     // If the client disconnected, we have to close the client connection
+    // TODO: Figure out what to do here about the event socket
+    //       The socket generating the SIGPIPE should return an EPIPE error on read/write
+    //         so we should be using that instead
     if(brokenPipe) {
       server.CloseConnection();
+      //eventServer.CloseConnection();
+      
       brokenPipe = false;
+    }
+
+    // We need to do this because we don't have each server in its own thread.  Bascially
+    //  we need to collect all the file descriptors into one select statement so that we
+    //  don't chew up the processor, but we also don't spend time waiting on e.g. the server
+    //  when the camera has work to do
+    fd_set sockset;
+    FD_ZERO(&sockset);
+    int maxfd = -1;
+    int sfd = server.ReadySet(&sockset);
+    int efd = eventServer.ReadySet(&sockset);
+        
+    if(sfd == -1 || efd == -1) {
+      debug << Debug::Mode::Failure << "One of the servers is not running! " <<
+        sfd << ":" << efd << std::endl;
+    }
+    
+    maxfd = max(sfd, efd);
+    //for(CameraInterface &cam : cameras) {
+    //  int cfd = cam.ReadySet(&sockset);
+    //  if(cfd > 0) maxfd = std::max(maxfd, cfd);
+    //}
+
+    
+    // TODO: Make this number configurable?  Decide on the best value here
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 1000 * 25; // 25ms
+
+    int sret = select(maxfd + 1, &sockset, NULL, NULL, &timeout);
+    if(sret < 0) {
+      // We timed out, but that doesn't matter
+      //debug << "Timeout on select" << std::endl;
+    } else {
+      //debug << "select returned: " <<  sret << std::endl;
     }
     
     // Process any data we need to from the server
-    if(!server.Process()) {
-      break;
+    if(FD_ISSET(sfd, &sockset) && !exiting) {
+      debug << " ---------------------------- Processing server" << std::endl;
+      if(!server.Process(&sockset)) {
+        break;
+      }
+    }
+
+    if(FD_ISSET(efd, &sockset) && !exiting) {
+      debug << " ----------------------------- Processing events" << std::endl;
+      if(!eventServer.Process(&sockset)) {
+        
+      }
+    }
+
+    // Check to see if we have any cameras here that we need to process
+    // TODO: Split this off into a new thread, that way we can reduce latency
+    //       on the main communication thread
+    // Always call the camera stuff regardless of the select return value
+    //  If they don't have anything to do they just return as they are non-blocking
+    for(CameraInterface &cam : cameras) {
+      //debug << "Processing camera: " << (void*)&cam << std::endl;
+      
+      cam.ProcessMainLoop(eventServer);
     }
 
     // TODO: Implement a timeout here so that if we are killed but the sockets dont close

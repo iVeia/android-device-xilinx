@@ -58,23 +58,25 @@ namespace iv4 {
         return;
     }
 
-    bool SocketInterface::Process() {
-        fd_set rset;
+    bool SocketInterface::Process(fd_set *rrset) {
+      fd_set *rset = nullptr;
+      fd_set irset;
+      if(rrset == nullptr) {
         int maxfd = 0;
-
+        
         if(clientSocket < 0 && serverSocket < 0) {
-            return false;
+          return false;
         }
-
+        
         // Set up our sockets for the select call so that we dont block
-        FD_ZERO(&rset);
+        FD_ZERO(&irset);
         if(clientSocket >= 0) {
             // There is an active client, so check to see if it has data to read
-            FD_SET(clientSocket, &rset);
+            FD_SET(clientSocket, &irset);
             maxfd = clientSocket + 1;
         } else if(serverSocket >= 0) {
             // Check to see if there is an incoming connection
-            FD_SET(serverSocket, &rset);
+            FD_SET(serverSocket, &irset);
             maxfd = serverSocket + 1;
         } else {
           // We have no valid sockets
@@ -86,11 +88,15 @@ namespace iv4 {
         timeout.tv_sec = 1;
         timeout.tv_usec = 0;
 
-        if(select(maxfd, &rset, NULL, NULL, &timeout) < 0) {
+        if(select(maxfd, &irset, NULL, NULL, &timeout) < 0) {
             return false;
         }
+        rset = &irset;
+      } else {
+        rset = rrset;
+      }
 
-        if(serverSocket >= 0 && FD_ISSET(serverSocket, &rset)) {
+      if(serverSocket >= 0 && FD_ISSET(serverSocket, rset)) {
             // Something to accept()
             struct sockaddr_un client_addr;
             socklen_t client_addr_size = sizeof(client_addr);
@@ -101,7 +107,7 @@ namespace iv4 {
                 //TODO: This probably means we have to quit/restart the hal application
                 clientSocket = -2;
             }
-        } else if(clientSocket >= 0 && FD_ISSET(clientSocket, &rset)) {
+      } else if(clientSocket >= 0 && FD_ISSET(clientSocket, rset)) {
             // there is data to read
             int bread = read(clientSocket, rdbuf, rdbufLen);
             if(bread < 0) {
@@ -216,6 +222,35 @@ namespace iv4 {
         int wroteP = write(clientSocket, m.payload.data(), pLen);
 
         return (wrote == len && wroteP == pLen);
+    }
+
+  
+    bool SocketInterface::Send(const Message::Header &header,
+                               uint8_t *data, int dataLen) {
+        if(clientSocket < 0) {
+            return false;
+        }
+
+        // Get the header as an array of bytes and its length
+        auto buf = header.ToByteArray();
+        int len = header.Size();
+
+        // Sanity check
+        if(buf == nullptr || len <= 0) return false;
+
+        // If the other side has closed the socket on us these writes will
+        //  generate a SIGPIPE - broken pipe signal.
+        // The server handles that and will call CloseConnection so we don't
+        //  do anything about that here
+        
+        // Write the header data to the socket.  buf is a unique_ptr
+        int wrote = write(clientSocket, buf.get(), len);
+        if(wrote < 0) return false;
+
+        // Then we have to write the payload data
+        int wroteP = write(clientSocket, data, dataLen);
+
+        return (wrote == len && wroteP == dataLen);      
     }
 
     void SocketInterface::Stop() {

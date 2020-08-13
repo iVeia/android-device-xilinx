@@ -10,6 +10,9 @@
 //  the @ gets replaced by \0 for abstract namespace required by Android
 #define IV4HAL_DEFAULT_SOCK_NAME "@/tmp/iv4hal.server" 
 
+
+#define IV4HAL_EVENT_SOCK_NAME   "@/tmp/iv4halev.server" 
+
 // Default configuration file for OTA management
 #define IV4HAL_DEFAULT_CONFIG    "/etc/iv4hal.conf"
 

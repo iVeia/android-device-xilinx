@@ -75,13 +75,20 @@ namespace iv4 {
         imm[0] : Which camera
         imm[1] : Bitmask of image types
         imm[2] : 1 to enable, 0 to disable
+        imm[3] : Messages to skip before sending
       */
       constexpr static uint8_t ContinuousCapture = 0x02;
+      //! Image Captured - Sent from the server to client when a new image has been captured
+      /*!
+        imm[0] : Which camera
+        imm[1] : Bitmask of image types captured
+      */
+      constexpr static uint8_t ImageCaptured     = 0x08;
       //! Get image - request a single image
       /*!
         imm[0] : Which camera
         imm[1] : Single image type.  If more than one bit is set, this is an error
-      */
+      */        
       constexpr static uint8_t GetImage          = 0x10;
       //! Send image - Message from the server containing image data
       /*!
@@ -95,6 +102,7 @@ namespace iv4 {
         switch(sub) {
         case CaptureImage:      return "Image::CaptureImage";
         case ContinuousCapture: return "Image::ContinuousCapture";
+        case ImageCaptured:     return "Image::ImageCaptured";
         case GetImage:          return "Image::GetImage";
         case SendImage:         return "Image::SendImage";
         default:                return "Image::Invalid";

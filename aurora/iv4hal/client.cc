@@ -14,6 +14,8 @@
 #include "socket_interface.hh"
 #include "message.hh"
 #include "camera.hh"
+#include "debug.hh"
+#include "time.h"
 
 using namespace std;
 using namespace iv4;
@@ -26,7 +28,7 @@ static volatile bool exiting = false;
 void signalHandler(int sig) {
   switch(sig) {
     case SIGINT:
-      std::cout << IV4HAL_TEST_CLIENT << "sigint received: exiting" << std::endl;
+      debug << Debug::Mode::Info << IV4HAL_TEST_CLIENT << "sigint received: exiting" << std::endl;
       exiting = true;
       break;
   }
@@ -35,16 +37,28 @@ void signalHandler(int sig) {
 int main(int argc, char ** argv) {
     signal (SIGINT, signalHandler);
 
-    cout << IV4HAL_TEST_CLIENT << "iv_v4_hal test client starting..." << endl;
+    debug.SetThreshold(Debug::Mode::Info); // Don't print out debugging information by default
+    debug.SetDefault(Debug::Mode::Debug);  // Default all debug statements to Mode::Debug
+    
+    for(int i = 1; i < argc; i++) {
+      if(std::string(argv[i]) == "-d") debug.SetThreshold(Debug::Mode::Debug);
+      else if(std::string(argv[i]) == "-q") debug.SetThreshold(Debug::Mode::Warn);
+    }
 
+    debug << Debug::Mode::Debug << "Debug statements visible" << std::endl;
+    debug << Debug::Mode::Info  << "Info  statements visible" << std::endl;
+    debug << Debug::Mode::Warn  << "Warn  statements visible" << std::endl;
+    debug << Debug::Mode::Err   << "Error statements visible" << std::endl;
+    
     struct {
         char const *arg;
         bool more;
         uint16_t cmd, subCmd;
     } commands[] = {
         {"--init",     false, Message::Management,     Message::Management.Initialize},
-        {"--cimg",     true, Message::Image,          Message::Image.CaptureImage},
+        {"--cimg",     true,  Message::Image,          Message::Image.CaptureImage},
         {"--gimg",     true,  Message::Image,          Message::Image.GetImage},
+        {"--ccap",     true,  Message::Image,           Message::Image.ContinuousCapture},
 
         {0, false, 0, 0},
     };
@@ -81,10 +95,33 @@ int main(int argc, char ** argv) {
                       i2 = ToInt(ImageType::UYVY); // Image type
                     }
                     break;
+                case Message::Image.ContinuousCapture:
+                  {                    
+                    if(++i >= argc) {
+                      cerr << "Not enough arguments to ContinuousCapture [on|off] [skip]" << endl;
+                      return -1;
+                    }
+                    std::string action = std::string(argv[i]);
+
+                    if(++i >= argc) {
+                      cerr << "Not enough arguments to ContinuousCapture [on|off] [skip]" << endl;
+                      return -1;
+                    }
+                    int skip = atoi(argv[i]);
+
+                    i1 = 0;
+                    i2 = ToInt(ImageType::UYVY);
+                    if(action == "on" || action == "On" || action == "1") i3 = 1;
+                    else i3 = 0;
+                    i4 = skip;
                   }
+                  break;
+                  
+                  } // end switch(subCmd)
+
                 } // end if command.more
                 
-                cout << IV4HAL_TEST_CLIENT << "pushing message: " <<
+                debug << IV4HAL_TEST_CLIENT << "pushing message: " <<
                   (int)commands[j].cmd << ":" << (int)commands[j].subCmd <<
                   ":" << i1 << ":" << i2 << ":" << i3 << ":" << i4 << ":" << payload.size() << endl;
                 
@@ -97,16 +134,16 @@ int main(int argc, char ** argv) {
         }
     }
 
-    cout << IV4HAL_TEST_CLIENT << "Connecting to server." << endl;
+    debug << IV4HAL_TEST_CLIENT << "Connecting to server." << endl;
     SocketInterface intf(
       [&saveImgTo](const Message &message) {
-        cout << IV4HAL_TEST_CLIENT << "Received message: " <<
+        debug << IV4HAL_TEST_CLIENT << "Received message: " <<
           (int)message.header.type << ":" << (int)message.header.subType << endl;
         
-        cout << "\t" << message.header.imm[0] << ":" << message.header.imm[1] << ":" <<
+        debug << "\t" << message.header.imm[0] << ":" << message.header.imm[1] << ":" <<
           message.header.imm[2] << ":" << message.header.imm[3] << endl;
         
-        cout << "\t" << message.header.pLen << endl;
+        debug << "\t" << message.header.pLen << endl;
 
         // Print out the payload if it is less than 1KB
         if(message.payload.size() < (1024)) {
@@ -117,7 +154,7 @@ int main(int argc, char ** argv) {
         }
         
         if(message.payload.size() > 0) {          
-          cout << "Payload size: " << message.payload.size() << endl << endl;
+          debug << "Payload size: " << message.payload.size() << endl << endl;
         }
 
         if(message.header.type == Message::Image &&
@@ -137,19 +174,94 @@ int main(int argc, char ** argv) {
           
         }
       });
+
+    int currFrame = 0;
+    time_t thent, nowt;
+    time(&thent);
+    SocketInterface evtIntf( [&nowt, &thent, &currFrame] (const Message &message) {
+        debug << "Got an event: " << message.toString() << endl;
+        
+        if(message.header.subType == Message::Image.SendImage) {
+          /*
+          char name[64];
+          sprintf(name, "/data/cap%d.yuv", currFrame);
+          currFrame++;
+          
+          ofstream outfile(std::string(name), std::ios::binary | std::ios::out);
+          int howMany = message.payload.size();
+          const char *pDat = reinterpret_cast<const char*>(message.payload.data());
+          
+          // Write out the payload in 4K chunks
+          while(howMany > 0) {
+            int toWrite = (howMany > 4096) ? 4096 : howMany;
+            outfile.write(pDat, toWrite);
+            howMany = howMany - toWrite;
+            pDat += toWrite;
+          }
+          debug << Debug::Mode::Info << "Wrote an image to " << name << std::endl;
+          */
+        }
+        if((++currFrame % 50) == 0) {
+          time(&nowt);
+          cout << currFrame << " frames in " << (nowt - thent) << " seconds" << std::endl;
+          cout << (double)currFrame / (double)(nowt - thent) << " fps" << std::endl;
+        }
+        
+      }, false, IV4HAL_EVENT_SOCK_NAME);
     
     // Sending all messages
     for(auto m : messages) {
-      cout << IV4HAL_TEST_CLIENT << "Sending message: " <<
+      debug << IV4HAL_TEST_CLIENT << "Sending message: " <<
         (int)m.header.type << ":" << (int)m.header.subType << endl;
       intf.Send(m);
     }
 
     while(!exiting) {
       // Process any data we need to from the server
-      if(!intf.Process()) {
-        break;
+      // We need to do this because we don't have each server in its own thread.  Bascially
+      //  we need to collect all the file descriptors into one select statement so that we
+      //  don't chew up the processor, but we also don't spend time waiting on e.g. the server
+      //  when the camera has work to do
+      fd_set sockset;
+      FD_ZERO(&sockset);
+      int maxfd = -1;
+      int sfd = intf.ReadySet(&sockset);
+      int efd = evtIntf.ReadySet(&sockset);
+      
+      if(sfd == -1 || efd == -1) {
+        debug << Debug::Mode::Failure << "One of the servers is not running! " <<
+          sfd << ":" << efd << std::endl;
       }
+      
+      maxfd = max(sfd, efd);
+      
+      
+      // TODO: Make this number configurable?  Decide on the best value here
+      struct timeval timeout;
+      timeout.tv_sec = 1;
+      timeout.tv_usec = 0;
+      
+      if(select(maxfd + 1, &sockset, NULL, NULL, &timeout) < 0) {
+        // We timed out, but that doesn't matter
+        debug << "Error on select" << std::endl;
+      } else {
+      }
+      
+      // Process any data we need to from the server
+      if(FD_ISSET(sfd, &sockset) && !exiting) {
+        debug << " ---------------------------- Processing server" << std::endl;
+        if(!intf.Process(&sockset)) {
+          break;
+        }
+      }
+      
+      if(FD_ISSET(efd, &sockset) && !exiting) {
+        debug << " ----------------------------- Processing events" << std::endl;
+        if(!evtIntf.Process(&sockset)) {
+          
+        }
+      }
+
     }
 
 

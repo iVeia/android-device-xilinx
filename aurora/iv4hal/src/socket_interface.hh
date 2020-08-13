@@ -26,11 +26,12 @@ class SocketInterface {
     SocketInterface(IV4MessageCallback callback, bool server = false, 
                     const std::string &name = IV4HAL_DEFAULT_SOCK_NAME);
 
-  bool Process();
+  bool Process(fd_set *rset = nullptr);
 
   void ProcessData(uint8_t *data, int dataLen);
   
   bool Send(const Message &m);
+  bool Send(const Message::Header &hdr, uint8_t *data, int dataLen);
 
   void Stop();
 
@@ -42,7 +43,20 @@ class SocketInterface {
   
   bool ClientConnected() const;
   void CloseConnection();
+
+  inline int ReadySet(fd_set *rset) {
+    if(clientSocket >= 0) {
+      // There is an active client, so check to see if it has data to read
+      FD_SET(clientSocket, rset);
+      return clientSocket;
+    } else if(serverSocket >= 0) {
+      // Check to see if there is an incoming connection
+      FD_SET(serverSocket, rset);
+      return serverSocket;
+    } else return -1;
+  }
   
+
 protected:
   bool               server;          // Is this instance a server
   int                serverSocket;    // Socket for listening server

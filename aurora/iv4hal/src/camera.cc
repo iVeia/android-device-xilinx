@@ -9,9 +9,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/videodev2.h>
-//#include <stdint.h>
-//#include <stdio.h>
-//#include <string.h>
+
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <asm/types.h>		/* for videodev2.h */
@@ -26,6 +24,7 @@
 
 namespace iv4 {
 
+  Image::Image() : Image(0,0,ImageType::UYVY) {}
   Image::Image(int width, int height, ImageType type) :
     _width(width), _height(height), _type(type) {
     _data.clear();
@@ -34,7 +33,8 @@ namespace iv4 {
   // The assumption here is that dat is width * height in size
   Image::Image(int width, int height, uint8_t *dat, int datLen, ImageType type) :
     Image(width, height, type) {
-    debug << Debug::Mode::Debug << "Making an image from location " << static_cast<void *>(dat) << " with length " << datLen << std::endl;
+    debug << Debug::Mode::Debug << "Making an image from location " << static_cast<void *>(dat) <<
+      " with length " << datLen << std::endl;
     switch(type) {
     case ImageType::UYVY:
       for(int i = 0; i < datLen; i++) _data.push_back(dat[i]);
@@ -153,7 +153,6 @@ namespace iv4 {
   }
 
   std::tuple<int,int> CameraInterface::InitializeBaslerCamera(int mediaDevNum) {
-
     std::string mediaSubDev = "";
     if(mediaDevNum == 0) {
       mediaSubDev = "/dev/v4l-subdev0";      
@@ -188,7 +187,7 @@ namespace iv4 {
     std::string format = "";
     std::string vformat = "";
     std::string width = "";
-    std::string height = "";
+   std::string height = "";
     switch(cameraType) {
     case 1:
       format = "UYVY8_1X16";
@@ -284,13 +283,120 @@ namespace iv4 {
   
   CameraInterface::CameraInterface(const std::string &videoDev,
                                    int width, int height) :
-    _width(width), _height(height), _vdev(videoDev), _camfd(-1)  {
+    _width(width), _height(height), _vdev(videoDev), _camfd(-1)  {    
+    streaming = false;
+  }
+
+  std::unique_ptr<Message> CameraInterface::ProcessMessage(const Message &m) {
+    if(m.header.type != Message::Image) return Message::MakeNACK(m, 0, "Invalid message passed to CameraInterface");
+
+    switch(m.header.subType) {
+    case Message::Image.ContinuousCapture:
+      {
+        if(m.header.imm[2] == 1) {
+          // Enable capturing
+          captureSkip = m.header.imm[3];
+          if(captureSkip < 0) captureSkip = 0;
+          captureTypes = GetImageTypes(m.header.imm[1]);
+          if(!streaming) StreamOn();
+          capturing = true;
+        } else {
+          // disable capturing
+          capturing = false;
+          StreamOff();
+          captureTypes.clear();
+        }
+      }
+      break;
+      
+    case Message::Image.CaptureImage:
+      {
+        oneshotTypes = GetImageTypes(m.header.imm[1]);
+        oneshotImages.clear();
+        oneshot = true;
+      }
+      break;
+    case Message::Image.GetImage:
+      {
+        // In order to get an image, we need:
+        // 1) An image type (and only one image type)
+        // 2) The image type must be in the capture list
+        // 3) The image type must have been captured
+        std::vector<ImageType> imgType = GetImageTypes(m.header.imm[1]);
+        if(imgType.size() != 1) {
+          return Message::MakeNACK(m, 0, "GetImage can only return one image type");
+        } else if(std::find(oneshotTypes.begin(), oneshotTypes.end(), (imgType[0])) == oneshotTypes.end()) {
+          return Message::MakeNACK(m, 0, "Image type not in capture list");
+        } else if(oneshotImages.find(imgType[0]) == oneshotImages.end()) {
+          return Message::MakeNACK(m, 0, "Image type not captured");          
+        } else {
+          // Get the captured (oneshot) image and send it.  If we don't have a oneshot image, it is an error
+          Image &activeImage0 = oneshotImages[imgType[0]];
+          int imageSize = activeImage0.Size();
+          int w = activeImage0.Width();
+          int h = activeImage0.Height();
+          debug << "Getting image: " << w << ":" << h << "(" << imageSize << ")" << std::endl;
+          
+          uint32_t res = ((w<<16) & 0xFFFF0000) | (h & 0x0000FFFF);
+          uint32_t msgs = 0x00010001; // At the moment we only send one message / image
+          uint32_t itype = ToInt(activeImage0.Type());
+          
+          return std::unique_ptr<Message>(new Message(Message::Image,
+                                                      Message::Image.SendImage,
+                                                      0, // camera number
+                                                      itype,
+                                                      res, msgs,
+                                                      activeImage0.GetData()));
+        }
+      }      
+      break;      
+    default:
+      return Message::MakeNACK(m, 0, "Unknown message subtype");
+      break;
+    }
+
+    debug << "Process Image message: streaming=" << streaming <<
+      " capturing=" << capturing <<
+      " oneshot=" << oneshot << std::endl;
+    
+    return Message::MakeACK(m);
+  }
+
+  bool CameraInterface::StreamOn() {
+    enum v4l2_buf_type type;
+    if(streaming) return true;
+    debug << "Turning streaming on" << std::endl;
+
+    type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+    if (-1 == xioctl(_camfd, VIDIOC_STREAMON, &type)) {
+      debug << Debug::Mode::Failure << _vdev << ": StreamOn " << strerror(errno) << std::endl;;
+      return false;
+    }
+
+    streaming = true;
+    return streaming;
+  }
+
+  bool CameraInterface::StreamOff() {
+    enum v4l2_buf_type type;
+    if(!streaming) return true;
+    debug << "Turning streaming off" << std::endl;
+    
+    type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+    if (-1 == xioctl(_camfd, VIDIOC_STREAMOFF, &type)) {
+      debug << Debug::Mode::Failure << _vdev << ": StreamOff " << strerror(errno) << std::endl;;
+      return false;
+    }
+
+    streaming = false;
+    return !streaming;
   }
 
   bool CameraInterface::InitializeV4L2() {
     // open up the video device
     
     _camfd = open(_vdev.c_str(), O_RDWR | O_NONBLOCK);
+    debug << "Opened camera device: " << _camfd << " for " << (void*)this << std::endl;
     
     if(_camfd < 0) {
 
@@ -302,6 +408,7 @@ namespace iv4 {
       req.count = 4;
       req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
       req.memory = V4L2_MEMORY_MMAP;
+      //req.memory = V4L2_MEMORY_DMABUF;
       
       if (-1 == xioctl(_camfd, VIDIOC_REQBUFS, &req)) {
         if (EINVAL == errno) {
@@ -327,6 +434,7 @@ namespace iv4 {
         CLEAR(planes);
         buf2.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
         buf2.memory = V4L2_MEMORY_MMAP;
+        //buf2.memory = V4L2_MEMORY_DMABUF;
         buf2.m.planes = planes;
         buf2.length = VIDEO_MAX_PLANES;
         int err = xioctl(_camfd, VIDIOC_QUERYBUF, &buf2);
@@ -347,6 +455,7 @@ namespace iv4 {
 
         buf.type        = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
         buf.memory      = V4L2_MEMORY_MMAP;
+        //buf.memory      = V4L2_MEMORY_DMABUF;
         buf.index       = bnum;
         buf.m.planes = planes;
         buf.length = VIDEO_MAX_PLANES;
@@ -360,13 +469,20 @@ namespace iv4 {
           planes[0].length << " offset:" << planes[0].m.mem_offset << ":" << std::endl;
         
         size_t tbuflen = planes[0].length;
+        // for mmap memory
         void *tbuf     = mmap(NULL                   /* start anywhere */,
                               planes[0].length,
                               PROT_READ | PROT_WRITE /* required */,
                               MAP_SHARED             /* recommended */,
                               _camfd,
                               planes[0].m.mem_offset);
-
+        //void *tbuf = mmap(NULL,
+        //                  planes[0].length,
+        //                  PROT_READ | PROT_WRITE,
+        //                  MAP_SHARED,
+        //                  buf.fds[i][0],
+        //                  0);
+        
         // Then add it to our list of buffers
         cambuf push_buf;
         push_buf.addr = static_cast<uint8_t *>(tbuf);
@@ -382,19 +498,15 @@ namespace iv4 {
           
           // Then we queue up the buffer
           if (-1 == xioctl(_camfd, VIDIOC_QBUF, &buf)) {
-            debug << Debug::Mode::Failure << _vdev << ": QBUF " << bnum << " " << strerror(errno) << std::endl;;
+            debug << Debug::Mode::Failure << _vdev << ": QBUF " << bnum << " " << strerror(errno) << std::endl;
             return false;
+          } else {
+            debug << "queueing buffer " << buf.index << " for " << _camfd << std::endl;
           }
+          
         }
       } // end for over each buffer
 
-
-      enum v4l2_buf_type type;
-      type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-      if (-1 == xioctl(_camfd, VIDIOC_STREAMON, &type)) {
-        debug << Debug::Mode::Failure << _vdev << ": StreamOn " << strerror(errno) << std::endl;;
-        return false;
-      }
     }
 
     return true;
@@ -402,42 +514,42 @@ namespace iv4 {
 
   CameraInterface::~CameraInterface() {
     // open says it returns a "small non-negative integer" so I guess 0 is valid
+    debug << "Closing " << _camfd << std::endl;
     if(_camfd >= 0) close(_camfd);
 
-    // TODO: Need to release v4l2 stuff
-  } // end CameraInterface::~CameraInterface
-  
-  std::unique_ptr<Image> CameraInterface::GetRawImage() {
-    if(_camfd < 0) return std::unique_ptr<Image> (nullptr);
-
-    // TODO: For continuous capture, this should go in a loop starting here
-    // --------------------------------------------------------------------
-    fd_set fds;
-    struct timeval tv;
-    int r;
-
-    FD_ZERO(&fds);
-    FD_SET(_camfd, &fds);
+    for(auto cbuf : buffers) {
+      if(cbuf.len > 0) munmap(cbuf.addr, cbuf.len);
+    }
     
-    /* Timeout. */
-    tv.tv_sec = 10;
-    tv.tv_usec = 0;
+  } // end CameraInterface::~CameraInterface
 
-    debug << Debug::Mode::Debug << "Starting select with " << _camfd << std::endl;
-    r = select(_camfd + 1, &fds, NULL, NULL, &tv);
-    debug << Debug::Mode::Debug << "select returned " << r << std::endl;
-
-    if (-1 == r) {
-      debug << Debug::Mode::Err << "select: " << strerror(errno) << std::endl;
-      return std::unique_ptr<Image> (nullptr);
+  bool CameraInterface::ProcessMainLoop(SocketInterface &intf) {
+    if(!IsGood()) {
+      debug << "Camera is not good in ProcessMainLoop: " << _camfd << ":" << (void*)this << std::endl;
+      return true; // Not nescessarilly a problem, but might be
+    }
+    
+    // If we are not streaming, we may need to turn that on
+    if(!streaming && capturing) {
+      // This is an error, but don't exit because of it
+      debug << Debug::Mode::Err << "Streaming is off but we are capturing" << std::endl;
+      return true;
     }
 
-    if (0 == r) {
-      debug << Debug::Mode::Err << "select timeout" << std::endl;
-      return std::unique_ptr<Image> (nullptr);
+    if(!streaming && oneshot) {
+      // We need to turn streaming on so that we can capture
+      if(!StreamOn()) {
+        debug << Debug::Mode::Failure << "Turning streaming on in ProcessMainLoop failed" << std::endl;
+      }
     }
 
-    // Read a frame
+    if(!streaming) {
+      // Now, if we are not streaming, there is no reason to continue as an image can't be available
+      //debug << "Not streaming" << std::endl;
+      return true;
+    }
+
+    // Now check to see if a frame is available
     struct v4l2_buffer buf;
     struct v4l2_plane planes[VIDEO_MAX_PLANES];
     CLEAR(buf);
@@ -445,50 +557,71 @@ namespace iv4 {
     
     buf.type     = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
     buf.memory   = V4L2_MEMORY_MMAP;
+    //buf.memory   = V4L2_MEMORY_DMABUF;
     buf.m.planes = planes;
     buf.length   = VIDEO_MAX_PLANES;
-    
-    int tryCount = 0;
-    const int numTimesToTry = 20; // 2 seconds
-    while(tryCount < numTimesToTry) {
-      if (-1 == xioctl(_camfd, VIDIOC_DQBUF, &buf)) {
-        switch (errno) {
-        case EAGAIN:
-          debug << Debug::Mode::Warn << "Got EAGAIN on buffer dequeue" << std::endl;
-          usleep(10000);
-          tryCount++;
-          break;
-        default:
-          debug << Debug::Mode::Failure << "buffer dequeue: " << strerror(errno) << std::endl;
-          return std::unique_ptr<Image> (nullptr);
-        }
-      } else {
-        debug << "Got a frame from buffer " << buf.index << std::endl;
-        break;
+
+    // NOTE: This event loop relies on the videodev being open in NONBLOCK mode
+    if (-1 == xioctl(_camfd, VIDIOC_DQBUF, &buf)) {
+      switch (errno) {
+      case EAGAIN:
+        // There is no frame yet, so continue on and try again next time
+        debug << "Got EAGAIN getting a frame" << std::endl;
+        return true;
+      default:
+        // There is an error in the v4l2 pipeline
+        debug << Debug::Mode::Failure << "buffer dequeue: " << _camfd << ":" << strerror(errno) << std::endl;
+        return false;
+      }
+    } else {
+      debug << "Got a frame from buffer " << buf.index << " on " << _camfd << std::endl;
+    }
+
+    // This is the buffer we are processing this time
+    struct cambuf &imgBuf = buffers[buf.index];
+
+    // TODO: Support more image types here?
+    uint32_t wcam = 0; // TODO: At the moment we only have one camera, need to know the number if there are >1
+    uint32_t res = ((_width<<16) & 0xFFFF0000) | (_height & 0x0000FFFF);
+    uint32_t msgs = 0x00010001; // At the moment we only send one message / image
+    uint32_t itype = ToInt(ImageType::UYVY);
+
+    if(capturing) {
+      if(((skippingAt) % captureSkip) == 0) {
+        // We need to send this frame
+        Message::Header hdr(Message::Image, Message::Image.SendImage,
+                            wcam, itype, res, msgs,
+                            imgBuf.len);
+
+        debug << "Sending an image as an event " << std::endl;
+        intf.Send(hdr, imgBuf.addr, imgBuf.len);
+      }
+
+      if(++skippingAt >= captureSkip) skippingAt = 0;
+    }
+
+    // See if we have a one shot we need to capture
+    if(oneshot) {
+      // TODO: itype in the event message below is supposed to be a bitmask of image types we have captured
+      //       At the moment we only support raw UYVY, but we need to support more at some point
+      oneshotImages[ImageType::UYVY] = Image(_width, _height, imgBuf.addr, imgBuf.len, ImageType::UYVY);
+      intf.Send(Message(Message::Image, Message::Image.ImageCaptured,
+                        wcam, itype, 0, 0));      
+      oneshot = false;
+      
+      if(!capturing) {
+        // We have to turn streaming off if this was just a oneshot
+        StreamOff();
       }
     }
 
-    if(tryCount >= numTimesToTry) {
-      debug << Debug::Mode::Failure << "Buffer de-queue tries exceeded: " << std::endl;
-      return std::unique_ptr<Image> (nullptr);      
-    }
-
-    // Pull the data into an image
-    // TODO: This copies the image data twice.  Once to get it into the image and once to get it into a message
-    //       We should be able to send directly from a buffer to socket
-    int which = buf.index;
-    std::unique_ptr<Image> retImage(new Image(_width, _height, buffers[which].addr, buffers[which].len));
-
-    // And requeue the buffer for future use
+    // Now we have to requeue the buffer
     if (-1 == xioctl(_camfd, VIDIOC_QBUF, &buf)) {
-      debug << Debug::Mode::Err << "Failed to re-queue buffer: " << strerror(errno) << std::endl;
-      // TODO: What to do here? Ignoring it probably isn't good, but we still have buffers?
-    } else {
-      debug << "Queue buffer " << buf.index;
+      debug << "Failed to requeue buffer: " << strerror(errno) << std::endl;
+      return false;
     }
 
-    return retImage;
+    return true;
   }
-
 
 } // end namespace

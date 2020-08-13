@@ -5,6 +5,11 @@
 #include <memory>
 #include <vector>
 #include <tuple>
+#include <map>
+
+#include "message.hh"
+#include "socket_interface.hh"
+#include "debug.hh"
 
 namespace iv4 {
   // TODO: This is kind of ugly.  Is there a way to handle typed enum's as bitfields?
@@ -32,6 +37,7 @@ namespace iv4 {
   
   class Image {
   public:
+    Image();
     Image(int width, int height, ImageType type = ImageType::UYVY);
     Image(int width, int height, uint8_t *dat, int datlen, ImageType type = ImageType::UYVY);
     
@@ -49,6 +55,7 @@ namespace iv4 {
     inline int GetData(std::vector<uint8_t> &dat) {
       return GetData(dat, 0, _data.size());
     }
+    inline const std::vector<uint8_t>& GetData() const {return _data;}
 
   private:
     unsigned int _width, _height;
@@ -58,39 +65,76 @@ namespace iv4 {
   
   class CameraInterface {
   public:
+    // Initialize  Basler I2C MIPI camera, which involves configuring the media pipeline using
+    //  v4l2-ctl and media-ctl and sending our playback information to the camera
+    //  via I2C.
+    // We don't really know how the camera works, so we record I2C traffic from their binary
+    //  only library, then play it back to configure the camera
+    static std::tuple<int,int> InitializeBaslerCamera(int mediaDevNum);
+
     // TODO: Replace all this with an identifier that gets
     //       matched to a camera in a config file
     CameraInterface(const std::string &ovideoDev,
                     int width, int height);
-    bool InitializeV4L2();
-    
     ~CameraInterface();
+    
+    // V4l2 controls
+    bool InitializeV4L2(); // Initialize v4l2 (query the dev node, get mmap buffers)
+    bool StreamOn();       // Send STREAMON to v4l2 system
+    bool StreamOff();      // Send STREAMOFF to v4l2 system
+          
     
     inline bool IsGood() const { return _camfd >= 0; }
     
-    std::unique_ptr<Image> GetRawImage();
-
-    
-    static std::tuple<int,int> InitializeBaslerCamera(int mediaDevNum);
     static void PlaybackBaslerFile(std::string playbackFile, std::string mediaDev);
+    std::unique_ptr<Message> ProcessMessage(const Message &m);
+
+    inline bool Streaming() const {return streaming;}
+
+    // Called by the event loop to allow the camera to perform its periodic actions
+    //  If needed, we can send images over the passed in interface
+    bool ProcessMainLoop(SocketInterface &intf);
+
+    inline int ReadySet(fd_set *rset) {
+      if(_camfd >= 0) {
+        FD_SET(_camfd, rset);
+        return _camfd;
+      } else return -1;
+    }
     
   private:
+    // The width and height of our capture device
+    //  TODO: We can query the v4l2 dev node to get this information
     int _width, _height;
-    std::string _vdev;
-    
-    int _camfd;
-    int num_planes;
 
+    // The path to our video device 
+    std::string _vdev;
+
+    // Information for the v4l2 sub-system
+    int _camfd;      // The file descriptor to the /dev/videoX device
+    int num_planes;  // How many planes our v4l2 capture device has
+
+    // True if we have turned v4l2 STREAMON 
+    bool streaming;
+
+    // We can set the camera to capture mode, where it will capture all the images
+    //  that are available
+    bool capturing;                       // Are we capturing images
+    int captureSkip;                      // How many images to skip before sending one
+    int skippingAt;                       // How many images we have skipped so far
+    std::vector<ImageType> captureTypes;  // The Types of images we are supposed to be capturing
+
+    // We also allow the capture of a single image.  We store that image until a new one is captured
+    bool oneshot;                         // True if we want to capture only one image, then stop
+    std::vector<ImageType> oneshotTypes;
+    std::map<ImageType, Image> oneshotImages;
+    
+    // Our v4l2 video buffers
     struct cambuf {
       uint8_t *addr;
       size_t len;
     };
-    std::vector<cambuf> buffers;
-    
-    //uint8_t **_cambuf;
-    //size_t  *_cambuflen;
-    //unsigned int _num_cambufs;
-    
+    std::vector<cambuf> buffers;    
   }; // end CameraInterface
 }; // end namespace
 #endif
