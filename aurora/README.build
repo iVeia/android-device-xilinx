@@ -45,5 +45,21 @@ can look at the contents of that script to see how the boot proceeds.
 The uboot.env (which gets loaded by u-boot) contains a command to run the script
 mystuff=load mmc 0:1 0x02000000 boot.scr ; source 0x02000000
 
-
 out/target/product/aurora/system.img should be copied to the system partition using dd
+
+============================================================
+The camera capture application does not start automatically.  You will want to start it by running
+iv_v4_hal -d
+The -d means enable debug printing, which is a lot.  After that a lot of text will flow by, and you
+cannot communicate with the server until that happens.
+
+To capture an image from the command line, run the following commands.  You will have to press Ctrl-C
+in between each one to break out of the listen loop
+iv_v4_hal_client -d --init
+iv_v4_hal_client -d --cimg
+iv_v4_hal_client -d --gimg /data/data.yuv
+
+To stream images run the following series of commands.  The files will be save to /data
+iv_v4_hal_client -d --init
+iv_v4_hal_client --ccap on 1
+
