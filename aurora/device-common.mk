@@ -69,7 +69,7 @@ PRODUCT_COPY_FILES += \
 #	device/xilinx/aurora/iVeiOTA/config/uEnvAB.txt:bi/uEnvAB.txt
 
 # Add i2c tools in there
-PRODUCT_PACKAGES += i2c-tools i2cget i2cdetect i2cset i2cdump
+PRODUCT_PACKAGES += i2c-tools i2cget i2cdetect i2cset i2cdump dhcpcd-6.8.2
 
 
 # Add tinyalsa
