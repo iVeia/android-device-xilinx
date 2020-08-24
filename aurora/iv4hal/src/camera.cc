@@ -378,6 +378,11 @@ namespace iv4 {
   }
 
   bool CameraInterface::StreamOff() {
+    // TODO: We can't turn the camera off at the moment, so we can't disable streaming
+    //        When we have control over the camera, we have to turn it off first, then send STREAMOFF
+    streaming = false;
+    return !streaming;
+    /*
     enum v4l2_buf_type type;
     if(!streaming) return true;
     debug << "Turning streaming off" << std::endl;
@@ -390,6 +395,7 @@ namespace iv4 {
 
     streaming = false;
     return !streaming;
+    */
   }
 
   bool CameraInterface::InitializeV4L2() {
@@ -405,7 +411,7 @@ namespace iv4 {
       CLEAR(req);
 
       // TODO: How many buffers?
-      req.count = 4;
+      req.count = 2;
       req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
       req.memory = V4L2_MEMORY_MMAP;
       //req.memory = V4L2_MEMORY_DMABUF;
@@ -525,7 +531,8 @@ namespace iv4 {
 
   bool CameraInterface::ProcessMainLoop(SocketInterface &intf) {
     if(!IsGood()) {
-      debug << "Camera is not good in ProcessMainLoop: " << _camfd << ":" << (void*)this << std::endl;
+      //debug << "Camera is not good in ProcessMainLoop: " << _camfd << ":" <<
+      //(void*)this << std::endl;
       return true; // Not nescessarilly a problem, but might be
     }
     
@@ -539,14 +546,18 @@ namespace iv4 {
     if(!streaming && oneshot) {
       // We need to turn streaming on so that we can capture
       if(!StreamOn()) {
-        debug << Debug::Mode::Failure << "Turning streaming on in ProcessMainLoop failed" << std::endl;
+        debug << Debug::Mode::Failure <<
+          "Turning streaming on in ProcessMainLoop failed" << std::endl;
       }
     }
 
     if(!streaming) {
       // Now, if we are not streaming, there is no reason to continue as an image can't be available
       //debug << "Not streaming" << std::endl;
-      return true;
+
+      //TODO: Once we can turn the camera off, we can short circuit out here,
+      //      but without the ability to do that, we are technically always streaming
+      //return true;
     }
 
     // Now check to see if a frame is available
@@ -570,7 +581,8 @@ namespace iv4 {
         return true;
       default:
         // There is an error in the v4l2 pipeline
-        debug << Debug::Mode::Failure << "buffer dequeue: " << _camfd << ":" << strerror(errno) << std::endl;
+        debug << Debug::Mode::Failure <<
+          "buffer dequeue: " << _camfd << ":" << strerror(errno) << std::endl;
         return false;
       }
     } else {
@@ -587,7 +599,7 @@ namespace iv4 {
     uint32_t itype = ToInt(ImageType::UYVY);
 
     if(capturing) {
-      if(((skippingAt) % captureSkip) == 0) {
+      if(skippingAt == captureSkip) {
         // We need to send this frame
         Message::Header hdr(Message::Image, Message::Image.SendImage,
                             wcam, itype, res, msgs,
@@ -597,7 +609,7 @@ namespace iv4 {
         intf.Send(hdr, imgBuf.addr, imgBuf.len);
       }
 
-      if(++skippingAt >= captureSkip) skippingAt = 0;
+      if(++skippingAt > captureSkip) skippingAt = 0;
     }
 
     // See if we have a one shot we need to capture

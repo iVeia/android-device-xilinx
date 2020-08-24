@@ -44,7 +44,11 @@ int main(int argc, char ** argv) {
   debug.SetThreshold(Debug::Mode::Info); // Don't print out debugging information by default
   debug.SetDefault(Debug::Mode::Debug);  // Default all debug statements to Mode::Debug
 
-  debug << Debug::Mode::Info << "Starting iv4 HAL server" << std::endl;
+  debug << Debug::Mode::Warn << "Starting iv4 HAL server v" << 
+    IV4HAL_MAJOR << "." <<
+    IV4HAL_MINOR << "." <<
+    IV4HAL_PATCH << std::endl;
+    
   // Register a signal handler so that we can exit gracefully when ctrl-c is pressed
   signal (SIGINT, signalHandler);
   signal (SIGPIPE, signalHandler);
