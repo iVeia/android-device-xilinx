@@ -113,6 +113,8 @@ namespace iv4 {
     // Information for the v4l2 sub-system
     int _camfd;      // The file descriptor to the /dev/videoX device
     int num_planes;  // How many planes our v4l2 capture device has
+    size_t plane_len;
+    int    num_buffers;
 
     // True if we have turned v4l2 STREAMON 
     bool streaming;
@@ -128,11 +130,16 @@ namespace iv4 {
     bool oneshot;                         // True if we want to capture only one image, then stop
     std::vector<ImageType> oneshotTypes;
     std::map<ImageType, Image> oneshotImages;
+
+    // user dma buffers
+    uint8_t *udma_addr;
+    size_t udma_len;
     
     // Our v4l2 video buffers
     struct cambuf {
       uint8_t *addr;
       size_t len;
+      int fd; // for dma purposes
     };
     std::vector<cambuf> buffers;    
   }; // end CameraInterface

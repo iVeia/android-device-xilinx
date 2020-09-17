@@ -21,7 +21,14 @@ namespace iv4 {
     static struct _ManagementMessage {
       //! Management message type
       constexpr operator uint8_t() const {return  0x01;}
-      //! Initialize the HAL system.  Currently this is done on boot and this command does nothing
+      //! Initialize the HAL system
+      /*!
+        No parameters on send
+
+        On receive:
+        Imm[2] - Chillups version
+        Imm[3] - HAL Server version
+      */
       constexpr static uint8_t Initialize        = 0x01;
       //! Gets the boot status of the active (current) container
       /*!
@@ -109,7 +116,96 @@ namespace iv4 {
         }
       }
     } Image;
-    
+
+    static struct _CUPSMessage {
+      //! HAL cups message type
+      constexpr operator uint8_t() const {return  0x03;}
+      //! Set temperature set point
+      /*!
+        imm[0] : Temperature
+        imm[1] : Range
+      */      
+      constexpr static uint8_t SetTemperature       = 0x10;
+      //! Get temperature set point
+      /*!
+        No parameters on send
+
+        On Receive
+        imm[0] : Temp set point
+        imm[1] : Range
+      */
+      constexpr static uint8_t GetTemperature       = 0x11;
+      //! Get all temperatures
+      /*!
+        No parameters on send
+        
+        On Receive
+        imm[0] : A count of how many temperatures
+        payload: a null-terminated list of temperatures of the form 
+          <name>:<value>
+      */
+      constexpr static uint8_t GetAllTemperatures   = 0x18;
+      //! Set defrost settings
+      /*!
+        imm[0] : defrost period
+        imm[1] : defrost limit
+      */
+      constexpr static uint8_t SetDefrostParams     = 0x20;
+      //! Get defrost settings
+      /*! No parameters on send
+
+        On receive
+        imm[0] : defrost period
+        imm[1] : defrost limit
+      */
+      constexpr static uint8_t GetDefrostParams    = 0x21;
+      //! Initiate defrost
+      constexpr static uint8_t InitiateDefrost     = 0x22;
+      //! Initiate battery test
+      constexpr static uint8_t IntiiateBatteryTest = 0x32;
+      //! Get all system voltages
+      /*!
+        No parameters on send
+
+        On receive
+        imm[0] : A count of how many voltages
+        payload: a null-terminated list of temperatures of the form
+          <name>:<value>
+      */
+      constexpr static uint8_t GetAllVoltages      = 0x38;
+      //! Get stored temperatures
+      /*!
+        No parameters on send
+        
+        One receive
+        imm[0] : How many temperatures were stored
+        payload: a null terminated list of temperatures of the form
+          <id>:<temp>
+      */
+      constexpr static uint8_t GetStoredTemperatures = 0x40;
+      //! Compressor Error event
+      /*!
+        imm[0] : Bitfield of errors
+      */
+      constexpr static uint8_t CompressorError      = 0xB0;
+
+      std::string toString(uint8_t sub) {
+        switch(sub) {
+        case SetTemperature       : return "CUPS::SetTemperature";
+        case GetTemperature       : return "CUPS::GetTemperature";
+        case GetAllTemperatures   : return "CUPS::GetAllTemperatures";
+        case SetDefrostParams     : return "CUPS::SetDefrostParams";
+        case GetDefrostParams     : return "CUPS::GetDefrostParams";
+        case InitiateDefrost      : return "CUPS::InitiateDefrost";
+        case IntiiateBatteryTest  : return "CUPS::IntiiateBatteryTest";
+        case GetAllVoltages       : return "CUPS::GetAllVoltages";
+        case GetStoredTemperatures: return "CUPS::GetStoredTemperatures";
+        case CompressorError      : return "CUPS::CompressorError";
+        default                   : return "CUPS::Invalid";
+        }
+      }
+
+    } CUPS;
     
     //! The message header for HAL messages
     /*!

@@ -14,6 +14,7 @@
 #include "support.hh"
 #include "message.hh"
 #include "camera.hh"
+#include "chillups.hh"
 
 using namespace iv4;
 using namespace std;
@@ -55,11 +56,20 @@ int main(int argc, char ** argv) {
 
   // For development convenience, fake things that don't exist on a dev system
   bool simulate = false;
+  bool use_cam  = true;
+  bool use_cups = true;
   for(int i = 1; i < argc; i++) {
     if(std::string(argv[i]) == "-s") simulate = true;
     
     else if(std::string(argv[i]) == "-d") debug.SetThreshold(Debug::Mode::Debug);
     else if(std::string(argv[i]) == "-q") debug.SetThreshold(Debug::Mode::Warn);
+
+    else if(std::string(argv[i]) == "--cam=1") use_cam = true;
+    else if(std::string(argv[i]) == "--cam=0") use_cam = false;
+
+    else if(std::string(argv[i]) == "--cups=1") use_cups = true;
+    else if(std::string(argv[i]) == "--cups=0") use_cups = false;
+            
   }
 
   debug << Debug::Mode::Debug << "Debug statements visible" << std::endl;
@@ -76,21 +86,30 @@ int main(int argc, char ** argv) {
   //             reeally need to be generic
   std::vector<CameraInterface> cameras;
 
-  // Camera0 First
-  std::tuple<int,int> res0 = CameraInterface::InitializeBaslerCamera(0);
-  cameras.push_back(CameraInterface("/dev/video0",
-                                    std::get<0>(res0),
-                                    std::get<1>(res0)));
-  debug << Debug::Mode::Info << "Initialized /dev/video0 " << (void*)&cameras.back() << "with resolution " <<
-    std::get<0>(res0) << "," <<  std::get<1>(res0) << std::endl;
-  // Next Camera would go here
-  
+  if(use_cam) {
+    // Camera0 First
+    std::tuple<int,int> res0 = CameraInterface::InitializeBaslerCamera(0);
+    cameras.push_back(CameraInterface("/dev/video0",
+                                      std::get<0>(res0),
+                                      std::get<1>(res0)));
+    
+    debug << Debug::Mode::Info << "Initialized /dev/video0 " << (void*)&cameras.back() << "with resolution " <<
+      std::get<0>(res0) << "," <<  std::get<1>(res0) << std::endl;
+    // Next Camera would go here
+  }
 
-  // TODO: Keep track of images for now, but we will be moving to a streaming system later
-  std::unique_ptr<Image> activeImage0;
+  ChillUPSInterface *cups = nullptr;
+  if(use_cups) {
+    cups = new ChillUPSInterface("/dev/i2c-5");
+  }
+
+  SocketInterface eventServer([] (const Message &msg) {
+    //  What to do?  This interface is for sending async events to the client
+    //  We should not be getting messages on it...
+  }, true, IV4HAL_EVENT_SOCK_NAME);
   
   // Create our listening socket
-  SocketInterface server([&server, &cameras, &initialized](const Message &message) {
+  SocketInterface server([&server, &cameras, &initialized, cups, &eventServer](const Message &message) {
     debug << "Message received: " << message.header.toString() << std::endl;
     
     std::vector<std::unique_ptr<Message>> resp;
@@ -98,22 +117,36 @@ int main(int argc, char ** argv) {
     // We handle management messages here ourselves
     if(message.header.type == Message::Management &&
        message.header.subType == Message::Management.Initialize) {
-      // Initialize has been called - send back our state and our revision
-      uint32_t rev =
-        ((IV4HAL_MAJOR << 16) & 0x00FF0000) |
-        ((IV4HAL_MINOR <<  8) & 0x0000FF00) |
-        ((IV4HAL_PATCH <<  0) & 0x000000FF);
-      resp.push_back(std::unique_ptr<Message>(new Message(Message::Management, Message::Management.Initialize,
-                                                          0, 0, 0, rev)));
+      // Initialize has been called
       if(!initialized) {
         debug << "Initializing " << cameras.size() << " cameras" << std::endl;
         for(CameraInterface &cam : cameras) {
           cam.InitializeV4L2();
           debug << "Initialized camera " << (void*)&cam << std::endl;
         }
+
+        if(cups != nullptr) {
+          cups->Initialize(eventServer);
+          debug << "Initialized ChillUPS" << std::endl;
+        }
       } else {
         // We are trying to initialize when we already are.  No harm there?        
       }
+
+      // Send back our state and revision here
+      int crev = 0;
+      if(cups != nullptr) {
+        crev =
+          ((cups->Major() << 4) & 0x000000F0) |
+          ((cups->Minor() << 0) & 0x0000000F);
+      }
+      
+      uint32_t rev =
+        ((IV4HAL_MAJOR << 16) & 0x00FF0000) |
+        ((IV4HAL_MINOR <<  8) & 0x0000FF00) |
+        ((IV4HAL_PATCH <<  0) & 0x000000FF);
+      resp.push_back(std::unique_ptr<Message>(new Message(Message::Management, Message::Management.Initialize,
+                                                          0, 0, crev, rev)));
 
       // Keep track of the fact that we have been initialized
       initialized = true;
@@ -156,11 +189,6 @@ int main(int argc, char ** argv) {
     }
   }, true);
 
-  SocketInterface eventServer([] (const Message &msg) {
-    //  What to do?  This interface is for sending async events to the client
-    //  We should not be getting messages on it...
-  }, true, IV4HAL_EVENT_SOCK_NAME);
-
   // Our event loop
   bool done = false;
   while(!exiting) {
@@ -176,6 +204,8 @@ int main(int argc, char ** argv) {
     // TODO: Figure out what to do here about the event socket
     //       The socket generating the SIGPIPE should return an EPIPE error on read/write
     //         so we should be using that instead
+    //       That involves going and making sure every read/write is safe in that regard
+    //         and bubbling the message up.
     if(brokenPipe) {
       server.CloseConnection();
       //eventServer.CloseConnection();
@@ -199,11 +229,6 @@ int main(int argc, char ** argv) {
     }
     
     maxfd = max(sfd, efd);
-    //for(CameraInterface &cam : cameras) {
-    //  int cfd = cam.ReadySet(&sockset);
-    //  if(cfd > 0) maxfd = std::max(maxfd, cfd);
-    //}
-
     
     // TODO: Make this number configurable?  Decide on the best value here
     struct timeval timeout;
@@ -212,10 +237,8 @@ int main(int argc, char ** argv) {
 
     int sret = select(maxfd + 1, &sockset, NULL, NULL, &timeout);
     if(sret < 0) {
-      // We timed out, but that doesn't matter
-      //debug << "Timeout on select" << std::endl;
+      // Timed out - just keeping going
     } else {
-      //debug << "select returned: " <<  sret << std::endl;
     }
     
     // Process any data we need to from the server
@@ -244,6 +267,10 @@ int main(int argc, char ** argv) {
       cam.ProcessMainLoop(eventServer);
     }
 
+    if(cups != nullptr) {
+      cups->ProcessMainLoop(eventServer);
+    }
+    
     // TODO: Implement a timeout here so that if we are killed but the sockets dont close
     //  we don't stay around anyway
   }

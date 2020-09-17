@@ -5,6 +5,24 @@ namespace iv4 {
   // Static message types to help with type safety
   struct Message::_ManagementMessage     iv4::Message::Management;
   struct Message::_ImageMessage          iv4::Message::Image;
+  struct Message::_CUPSMessage           iv4::Message::CUPS;
+  
+  std::string Message::Header::toString() const {
+    std::stringstream ss;
+    switch(type) {
+    case Message::Management:     ss << Message::Management.toString(subType);     break;
+    case Message::Image:          ss << Message::Image.toString(subType);          break;
+    case Message::CUPS:           ss << Message::CUPS.toString(subType);           break;
+    default: return "Invalid:Invalid";
+    }
+    
+    // Add in the immediate parameters
+    ss << " (" << imm[0] << ")(" << imm[1] << ")(" << imm[2] << ")(" << imm[3] << ") : " << pLen;
+    
+    // Extract and return the string
+    return ss.str();
+  }
+
   // Our sync message
   const uint8_t  Message::sync[] = {'i', 'v', '4', ' ', 'h', 'a', 'l', '\0'};
   const uint32_t Message::sync1 = (sync[0] << 24) | (sync[1] << 16) | (sync[2] << 8) | sync[3];
@@ -92,21 +110,6 @@ namespace iv4 {
     return ret;
   }
   
-  std::string Message::Header::toString() const {
-    std::stringstream ss;
-    switch(type) {
-    case Message::Management:     ss << Message::Management.toString(subType);     break;
-    case Message::Image:          ss << Message::Image.toString(subType);          break;
-    default: return "Invalid:Invalid";
-    }
-    
-    // Add in the immediate parameters
-    ss << " (" << imm[0] << ")(" << imm[1] << ")(" << imm[2] << ")(" << imm[3] << ") : " << pLen;
-    
-    // Extract and return the string
-    return ss.str();
-  }
-
   // Convenience constructors -- These mainly just pass information on to the
   //  header constructor
   Message::Message(uint32_t type, uint32_t subType) : header(type, subType) {}  

@@ -411,10 +411,11 @@ namespace iv4 {
       CLEAR(req);
 
       // TODO: How many buffers?
-      req.count = 2;
+      req.count = 4;
       req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-      req.memory = V4L2_MEMORY_MMAP;
+      //req.memory = V4L2_MEMORY_MMAP;
       //req.memory = V4L2_MEMORY_DMABUF;
+      req.memory = V4L2_MEMORY_USERPTR;
       
       if (-1 == xioctl(_camfd, VIDIOC_REQBUFS, &req)) {
         if (EINVAL == errno) {
@@ -430,7 +431,7 @@ namespace iv4 {
         debug << Debug::Mode::Failure <<  _vdev << ": Insufficient buffer memory" << std::endl;;
         return false;
       }
-      
+
       {
         // Now we have to query the planar information
         struct v4l2_plane planes[VIDEO_MAX_PLANES];
@@ -439,8 +440,9 @@ namespace iv4 {
         CLEAR(buf2);
         CLEAR(planes);
         buf2.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-        buf2.memory = V4L2_MEMORY_MMAP;
+        //buf2.memory = V4L2_MEMORY_MMAP;
         //buf2.memory = V4L2_MEMORY_DMABUF;
+        buf2.memory = V4L2_MEMORY_USERPTR;
         buf2.m.planes = planes;
         buf2.length = VIDEO_MAX_PLANES;
         int err = xioctl(_camfd, VIDIOC_QUERYBUF, &buf2);
@@ -450,21 +452,60 @@ namespace iv4 {
         }
         // TODO: Handle multi-planar formats?
         num_planes = buf2.length;
-        debug << Debug::Mode::Debug << "Num planes: " << num_planes << std::endl;
+        plane_len = planes[0].length;
+        num_buffers = req.count;
+        
+        debug << Debug::Mode::Debug << "Num planes: " << num_planes <<
+          " plane size: " << plane_len << std::endl;
+        if(num_planes != 1) {
+          debug << Debug::Mode::Warn << "Number of planes is not 1.  Not supported: " << num_planes << std::endl;
+        }
       }
-      
+
+      {
+        // We need to get our udma buffer now
+        int ufd = open("/dev/udmabuf0", O_RDWR);
+        if(ufd < 0) {
+          debug << Debug::Mode::Warn << "Opening " << "/dev/udmabuf0" << " failed." << std::endl;
+        } else {
+          // Map in the user dma buffer and close the backing file
+          udma_len = num_buffers * plane_len;
+          udma_addr = static_cast<uint8_t*>(mmap(NULL, udma_len, PROT_READ | PROT_WRITE, MAP_SHARED, ufd, 0));
+          close(ufd);
+          
+          debug << "Opened " << "/dev/udmabuf0" << " and mapped " << udma_len << " bytes to " <<
+            static_cast<void*>(udma_addr) << std::endl;
+          
+          // I need to touch every page in the mmap'd region to page them in
+          uint8_t *buf_ptr = udma_addr;
+          uint8_t qq_tmp = 77;
+          while(buf_ptr < (udma_addr + udma_len)) {
+            buf_ptr[0] = qq_tmp;
+            if(buf_ptr[0] != qq_tmp) {
+              debug << Debug::Mode::Failure << "Buffer read/write verification failed: " <<
+                buf_ptr[0] << ":" << qq_tmp << std::endl;
+              //return false;
+            }
+            buf_ptr++;
+            qq_tmp = qq_tmp * 2;
+          }
+        }
+      }
+            
       for(unsigned int bnum = 0; bnum < req.count; bnum++) {
         struct v4l2_buffer buf;
         struct v4l2_plane planes[VIDEO_MAX_PLANES];
+        
         CLEAR(buf);
         CLEAR(planes);
 
         buf.type        = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-        buf.memory      = V4L2_MEMORY_MMAP;
+        //buf.memory      = V4L2_MEMORY_MMAP;
         //buf.memory      = V4L2_MEMORY_DMABUF;
+        buf.memory      = V4L2_MEMORY_USERPTR;
         buf.index       = bnum;
-        buf.m.planes = planes;
-        buf.length = VIDEO_MAX_PLANES;
+        buf.m.planes    = planes;
+        buf.length      = VIDEO_MAX_PLANES;
         
         if (-1 == xioctl(_camfd, VIDIOC_QUERYBUF, &buf)) {
           debug << Debug::Mode::Failure << _vdev << ": VIDIOC_QUERYBUF: " << strerror(errno) << std::endl;;
@@ -474,45 +515,47 @@ namespace iv4 {
         debug << Debug::Mode::Debug << "query buf = len:" <<
           planes[0].length << " offset:" << planes[0].m.mem_offset << ":" << std::endl;
         
-        size_t tbuflen = planes[0].length;
+        size_t tbuflen = planes[0].length;        
         // for mmap memory
-        void *tbuf     = mmap(NULL                   /* start anywhere */,
-                              planes[0].length,
-                              PROT_READ | PROT_WRITE /* required */,
-                              MAP_SHARED             /* recommended */,
-                              _camfd,
-                              planes[0].m.mem_offset);
+        //void *tbuf     = mmap(NULL                   /* start anywhere */,
+        //                      planes[0].length,
+        //                      PROT_READ | PROT_WRITE /* required */,
+        //                      MAP_SHARED             /* recommended */,
+        //                      _camfd,
+        //                      planes[0].m.mem_offset);
         //void *tbuf = mmap(NULL,
         //                  planes[0].length,
         //                  PROT_READ | PROT_WRITE,
         //                  MAP_SHARED,
-        //                  buf.fds[i][0],
+        //                  fd,
         //                  0);
         
-        // Then add it to our list of buffers
-        cambuf push_buf;
-        push_buf.addr = static_cast<uint8_t *>(tbuf);
+        cambuf push_buf;        
         push_buf.len = tbuflen;
+        push_buf.addr = udma_addr + (tbuflen * bnum);
+        push_buf.fd = -1;
         buffers.push_back(push_buf);
         
-        debug << Debug::Mode::Debug << "Buffer " << bnum << " is at offset " << static_cast<void*>(buffers[bnum].addr) <<
+        debug << Debug::Mode::Debug << "Buffer " << bnum << "(" << buffers[bnum].fd << ")" << 
+          " is at offset " << static_cast<void*>(buffers[bnum].addr) <<
           " with length " << buffers[bnum].len << std::endl;
         
-        if (MAP_FAILED == buffers[bnum].addr) {
-          debug << Debug::Mode::Failure << _vdev << ": mmap: " << strerror(errno) << std::endl;;
+        //if (MAP_FAILED == buffers[bnum].addr) {
+        //  debug << Debug::Mode::Failure << _vdev << ": mmap: " << strerror(errno) << std::endl;;
+        //  return false;
+        //}
+        
+        // Then we queue up the buffer
+        planes[0].m.userptr = reinterpret_cast<unsigned long>(buffers[bnum].addr);
+        debug << "buffer " << bnum << ":" << 0 << " addr is: " <<
+          reinterpret_cast<void*>(buf.m.planes[0].m.userptr) << std::endl;
+        if (-1 == xioctl(_camfd, VIDIOC_QBUF, &buf)) {
+          debug << Debug::Mode::Failure << _vdev << ": QBUF failed " << bnum << " " << strerror(errno) << std::endl;
+          return false;
         } else {
-          
-          // Then we queue up the buffer
-          if (-1 == xioctl(_camfd, VIDIOC_QBUF, &buf)) {
-            debug << Debug::Mode::Failure << _vdev << ": QBUF " << bnum << " " << strerror(errno) << std::endl;
-            return false;
-          } else {
-            debug << "queueing buffer " << buf.index << " for " << _camfd << std::endl;
-          }
-          
+          debug << "queueing buffer " << buf.index << " for " << _camfd << std::endl;
         }
       } // end for over each buffer
-
     }
 
     return true;
@@ -567,8 +610,9 @@ namespace iv4 {
     CLEAR(planes);
     
     buf.type     = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-    buf.memory   = V4L2_MEMORY_MMAP;
+    //buf.memory   = V4L2_MEMORY_MMAP;
     //buf.memory   = V4L2_MEMORY_DMABUF;
+    buf.memory   = V4L2_MEMORY_USERPTR;
     buf.m.planes = planes;
     buf.length   = VIDEO_MAX_PLANES;
 

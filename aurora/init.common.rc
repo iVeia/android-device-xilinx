@@ -151,8 +151,9 @@ on property:sys.boot_completed=1
 #    copy /etc/ssh/ssh_host_rsa_key /data/etc/ssh/ssh_host_rsa_key
 #    start sshd
 #    start iVeiOTA
-     start eth0_dhcp
-     start iv_v4_hal
+#     start iv_v4_hal
+     exec u:r:shell:s0 root -- /system/bin/ifconfig eth0 up
+     exec u:r:shell:s0 root -- /system/bin/dhcpcd-6.8.2 eth0
      
 
 # ALSA audio mixer defaults for speaker out, do before calling play_boot_sound
