@@ -12,6 +12,7 @@
 
 
 namespace iv4 {
+#define SET_READ_WAIT_TIME (1000 * 100) // 100ms
   ChillUPSInterface::ChillUPSInterface(std::string dev) :_dev(dev) {
     i2cfd = -1;
     tLastFastUpdate = 0;
@@ -63,11 +64,14 @@ namespace iv4 {
       {addr, 0,        static_cast<uint16_t>(buf.size()),      buf.data()},
     };
     
-    struct i2c_rdwr_ioctl_data ioctl_data = { &msgs[0], 2 };
+    struct i2c_rdwr_ioctl_data ioctl_data = { &msgs[0], 1 };
     ret = ioctl(fd, I2C_RDWR, &ioctl_data);
 
     if(ret < 0) {
-      debug << Debug::Mode::Failure << "Failed to transmit I2C write message: " << strerror(errno) << std::endl;
+      debug << Debug::Mode::Failure << "Failed to transmit I2C write message: " <<
+        fd << " " << 
+        std::hex << (unsigned int)addr << std::dec <<
+        strerror(errno) << std::endl;
       return false;
     }
     
@@ -121,7 +125,9 @@ namespace iv4 {
 
     bool ret = i2c_read_reg(fd, addr, reg, ival, 2);
     if(ret) {
-      rval = (ival[0] << 8) | ival[1];
+      rval = (ival[1] << 8) | ival[0];
+      debug << "Read u16: " << std::hex << (short)ival[0] << ":" << (short)ival[1] << " -- " <<
+        rval << std::dec << " = " << rval << std::endl;
     } else {
       rval = 0.0;
     }
@@ -135,7 +141,9 @@ namespace iv4 {
 
     bool ret = i2c_read_reg(fd, addr, reg, ival, 2);
     if(ret) {
-      rval = (ival[0] << 8) | ival[1];
+      rval = (ival[1] << 8) | ival[0];
+      debug << "Read i16: " << std::hex << (short)ival[0] << ":" << (short)ival[1] << " -- " <<
+        rval << std::dec << " = " << rval << std::endl;
     } else {
       rval = 0.0;
     }
@@ -162,6 +170,8 @@ namespace iv4 {
     bool ret = std::get<0>(res);
     if(ret) {
       lastThermistorTemp = std::get<1>(res) * 0.01;
+      debug << "Thermistor temp: " << lastThermistorTemp << "::" <<
+        std::hex << std::get<1>(res) << std::dec << std::endl;
     }
 
     return ret;
@@ -173,9 +183,24 @@ namespace iv4 {
 
     if(ret) {
       lastDefrostPeriod = std::get<1>(res);
+      debug << "Defrost Period : " << (unsigned short)lastDefrostPeriod << "::" <<
+        std::hex << (unsigned short)std::get<1>(res) << std::dec << std::endl;
     }
     
     return ret;    
+  }
+  bool ChillUPSInterface::setDefrostPeriod(uint16_t period) {
+    uint16_t val = period;
+    std::vector<uint8_t> msg {0x02,
+        static_cast<uint8_t>((val & 0x00FF) >> 0),
+        static_cast<uint8_t>((val & 0xFF00) >> 8),
+        };
+    
+    bool success = i2c_write(i2cfd, 0x64, msg);
+    usleep(SET_READ_WAIT_TIME);
+    success |= readDefrostPeriod();
+
+    return success;
   }
  
   bool ChillUPSInterface::readChargePercent() {
@@ -184,6 +209,8 @@ namespace iv4 {
 
     if(ret) {
       lastChargePercent = std::get<1>(res);
+      debug << "Charge % " << (unsigned short)lastChargePercent << "::" <<
+        std::hex << (short)std::get<1>(res) << std::dec << std::endl;
     }
     
     return ret;
@@ -194,6 +221,8 @@ namespace iv4 {
     bool ret = std::get<0>(res);
     if(ret) {
       lastSupplyVoltage = std::get<1>(res) * 0.1;
+      debug << "Supply voltage " << lastSupplyVoltage << "::" <<
+        std::hex << (short)std::get<1>(res) << std::dec << std::endl;
     }
    
     return ret;
@@ -204,6 +233,8 @@ namespace iv4 {
     bool ret = std::get<0>(res);
     if(ret) {
       lastBatteryVoltage = std::get<1>(res) * 0.1;
+      debug << "Battery voltage " << lastBatteryVoltage << "::" <<
+        std::hex << (short)std::get<1>(res) << std::dec << std::endl;
     }
    
     return ret;
@@ -214,6 +245,8 @@ namespace iv4 {
     bool ret = std::get<0>(res);
     if(ret) {
       lastBackplaneVoltage = std::get<1>(res) * 0.1;
+      debug << "Backplane voltage " << lastBackplaneVoltage << "::" <<
+        std::hex << (short)std::get<1>(res) << std::dec << std::endl;
     }
    
     return ret;
@@ -225,6 +258,8 @@ namespace iv4 {
 
     if(ret) {
       lastOtherVoltage = std::get<1>(res) * 0.1;
+      debug << "Other voltage " << lastOtherVoltage << "::" <<
+        std::hex << (short)std::get<1>(res) << std::dec << std::endl;
     }
    
     return ret;
@@ -236,6 +271,8 @@ namespace iv4 {
 
     if(ret) {
       lastTempRange = std::get<1>(res) * 0.01;
+      debug << "Range: " << lastTempRange << "::" <<
+        std::hex << (short)std::get<1>(res) << std::dec << std::endl;
     }
    
     return ret;
@@ -246,6 +283,8 @@ namespace iv4 {
     std::vector<uint8_t> msg {0x09, irange };
 
     bool success = i2c_write(i2cfd, 0x64, msg);
+    debug << "Wrote " << std::hex << (short)irange << std::dec << " to 0x64 0x09" << std::endl;
+    usleep(SET_READ_WAIT_TIME);
     success |= readTempRange();
 
     return success;
@@ -257,6 +296,8 @@ namespace iv4 {
 
     if(ret) {
       lastSetPoint = std::get<1>(res) * 0.01;
+      debug << "Set Point " << lastSetPoint << "::" <<
+        std::hex << std::get<1>(res) << std::dec << std::endl;
     }
    
     return ret;
@@ -265,11 +306,13 @@ namespace iv4 {
     int16_t val = static_cast<int16_t>(setPoint * 100);
 
     std::vector<uint8_t> msg {0x0E,
-        static_cast<uint8_t>((val & 0xFF00) >> 8),
         static_cast<uint8_t>((val & 0x00FF) >> 0),
+        static_cast<uint8_t>((val & 0xFF00) >> 8),
         };
     
     bool success = i2c_write(i2cfd, 0x64, msg);
+    debug << "Wrote " << std::hex << (short)val << std::dec << " to 0x64 0x0E" << std::endl;
+    usleep(SET_READ_WAIT_TIME);
     success |= readSetPoint();
 
     return success;
@@ -289,6 +332,15 @@ namespace iv4 {
 
     return ret;
   }
+  bool ChillUPSInterface::setDefrostLength(uint8_t length) {
+    std::vector<uint8_t> msg {0x12, length};
+    
+    bool success = i2c_write(i2cfd, 0x64, msg);
+    usleep(SET_READ_WAIT_TIME);
+    success |= readDefrostLength();
+
+    return success;    
+  }
   
   bool ChillUPSInterface::readCompressorBackupState(){
     i2c_u8 res = i2c_read_reg_u8(i2cfd, 0x64, 0x13);
@@ -304,6 +356,7 @@ namespace iv4 {
     std::vector<uint8_t> msg {0x13, static_cast<uint8_t>(((state)?0xFF:0x00))};
     
     bool success = i2c_write(i2cfd, 0x64, msg);
+    usleep(SET_READ_WAIT_TIME);
     success |= readCompressorBackupState();
 
     return success;
@@ -324,6 +377,7 @@ namespace iv4 {
     std::vector<uint8_t> msg {0x14, static_cast<uint8_t>(((state)?0xFF:0x00))};
 
     bool success = i2c_write(i2cfd, 0x64, msg);
+    usleep(SET_READ_WAIT_TIME);
     success |= readTempLoggingState();
 
     return success;
@@ -338,6 +392,20 @@ namespace iv4 {
     }
    
     return ret;
+  }
+  bool ChillUPSInterface::setDefrostTempLimit(float limit) {
+    int16_t val = static_cast<int16_t>(limit * 100);
+
+    std::vector<uint8_t> msg {0x16,
+        static_cast<uint8_t>((val & 0x00FF) >> 0),
+        static_cast<uint8_t>((val & 0xFF00) >> 8),
+        };
+    
+    bool success = i2c_write(i2cfd, 0x64, msg);
+    usleep(SET_READ_WAIT_TIME);
+    success |= readDefrostTempLimit();
+
+    return success;
   }
   
   bool ChillUPSInterface::readCalibratedColdCubeTemp(){
@@ -462,6 +530,7 @@ namespace iv4 {
           if(mainStatus.firmwareState != lastMainStatus.firmwareState) {
             if(!mainStatus.firmwareState) {
               // TODO: We should send a special catastrophic failure message here
+              
             }
           }
 
@@ -557,6 +626,7 @@ namespace iv4 {
 
     // TODO: Need to set this based on data from aggregate
     readSetPoint();
+    readTempRange();
 
     // Then we run the slow update to populate initial values
     updateSlowStatus(intf, false);
@@ -568,6 +638,8 @@ namespace iv4 {
   std::unique_ptr<Message> ChillUPSInterface::ProcessMessage(const Message &m) {
     if(m.header.type != Message::CUPS) return Message::MakeNACK(m, 0, "Invalid message passed to ChillUPSInterface");
 
+    open();
+    
     switch(m.header.subType) {
     case Message::CUPS.SetTemperature:
       {
@@ -575,6 +647,7 @@ namespace iv4 {
         int16_t range = static_cast<int16_t>(m.header.imm[1]);
 
         if(temp < -2000 || temp > 4000) {
+          close();
           return Message::MakeNACK(m, 0, "Temperature out of range");
         }
 
@@ -588,6 +661,7 @@ namespace iv4 {
 
     case Message::CUPS.GetTemperature:
       {
+        close();
         return std::unique_ptr<Message>(new Message(Message::CUPS, Message::CUPS.GetTemperature,
                                                     static_cast<int>(lastSetPoint * 100),
                                                     static_cast<int>(lastTempRange * 100),
@@ -629,6 +703,7 @@ namespace iv4 {
           count++;
         }
 
+        close();
         return std::unique_ptr<Message>(new Message(Message::CUPS, Message::CUPS.GetAllTemperatures,
                                                     count, 0, 0, 0,
                                                     payload));
@@ -638,40 +713,44 @@ namespace iv4 {
     case Message::CUPS.SetDefrostParams:
       {
         if(m.header.imm[0] > 65536) {
+          close();
           return Message::MakeNACK(m, 0, "Defrost period out of range");
         }
         uint16_t newDefrostPeriod = m.header.imm[0];
 
         if(m.header.imm[1] > 255) {
+          close();
           return Message::MakeNACK(m, 0, "Defrost length out of range");
         }
         uint8_t newDefrostLength = m.header.imm[1];
 
-        int val2 = *reinterpret_cast<int*>(const_cast<uint32_t*>(&(m.header.imm[2])));
+        int val2 = m.header.imm[2];
         float newDefrostLimit = val2 * 0.01;
         if(newDefrostLimit < -20.0 || newDefrostLimit > 40.0) {
+          close();
           return Message::MakeNACK(m, 0, "Defrost limit out of range");
         }
 
         bool success = true;
         success |= setDefrostPeriod(newDefrostPeriod);
-        success |= readDefrostPeriod();
         success |= setDefrostLength(newDefrostLength);
-        success |= readDefrostLength();
         success |= setDefrostTempLimit(newDefrostLimit);
-        success |= readDefrostTempLimit();
+
 
         if(!success) {
+          close();
           return Message::MakeNACK(m, 0, "Failed to set defrost settings");
         }
       }
       break;
     case Message::CUPS.GetDefrostParams:
       {
+        close();
         return std::unique_ptr<Message>(new Message(Message::CUPS, Message::CUPS.GetDefrostParams,
                                                     lastDefrostPeriod,
+                                                    lastDefrostLength, 
                                                     static_cast<int>(lastDefrostTempLimit * 100),
-                                                    0,0));
+                                                   0));
       }
       break;
       
@@ -690,6 +769,7 @@ namespace iv4 {
           success |= i2c_write(i2cfd, 0x60, msg2);
         }
 
+        close();
         if(!success) return Message::MakeNACK(m, 0, "Failed to initiate defrost");
       }
       break;
@@ -706,34 +786,109 @@ namespace iv4 {
         }
 
         if(!success) {
+          close();
           return Message::MakeNACK(m, 0, "Failed to initiate battery test");
         }
       }
       break;
       
-    case Message::CUPS.GetAllVoltages       :
+    case Message::CUPS.GetAllVoltages:
       {
+        int count = 0;
+        std::vector<uint8_t> payload;
+        {
+          std::string name("supply");
+          std::string val = std::to_string(lastSupplyVoltage);
+          for(auto c : name) payload.push_back(c);
+          payload.push_back(':');
+          for(auto c : val) payload.push_back(c);
+          payload.push_back('\0');
+          count++;
+        }
+        {
+          std::string name("battery");
+          std::string val = std::to_string(lastBatteryVoltage);
+          for(auto c : name) payload.push_back(c);
+          payload.push_back(':');
+          for(auto c : val) payload.push_back(c);
+          payload.push_back('\0');
+          count++;
+        }
+        {
+          std::string name("backplane");
+          std::string val = std::to_string(lastBackplaneVoltage);
+          for(auto c : name) payload.push_back(c);
+          payload.push_back(':');
+          for(auto c : val) payload.push_back(c);
+          payload.push_back('\0');
+          count++;
+        }
+        {
+          std::string name("charger");          
+          std::string val = std::to_string(lastOtherVoltage);
+          for(auto c : name) payload.push_back(c);
+          payload.push_back(':');
+          for(auto c : val) payload.push_back(c);
+          payload.push_back('\0');
+          count++;
+        }
+
+        debug << "Returning " << count << " voltages" << std::endl;
+        close();
+        return std::unique_ptr<Message>(new Message(Message::CUPS, Message::CUPS.GetAllVoltages,
+                                                    count, 0, 0, 0,
+                                                    payload));        
+      }
+      break;
+
+    case Message::CUPS.GetBatteryPercent:
+      {
+        close();
+        return std::unique_ptr<Message>(new Message(Message::CUPS, Message::CUPS.GetBatteryPercent,
+                                                    static_cast<int>(lastChargePercent * 100),
+                                                    0, 0, 0));
       }
       break;
       
     case Message::CUPS.GetStoredTemperatures:
       {
+        std::vector<uint8_t> payload;
+        int count = savedTemps.size();
+        for(auto t : savedTemps) {
+          std::string ndx = std::to_string(std::get<0>(t));
+          std::string val = std::to_string(std::get<1>(t));
+          for(auto c : ndx) payload.push_back(c);
+          payload.push_back(':');
+          for(auto c : val) payload.push_back(c);
+          payload.push_back('\0');          
+        }
+        savedTemps.clear();
+        close();
+        return std::unique_ptr<Message>(new Message(Message::CUPS, Message::CUPS.GetStoredTemperatures,
+                                                    count, 0, 0, 0,
+                                                    payload));        
       }
       break;
       
-    case Message::CUPS.CompressorError      :
+    case Message::CUPS.CompressorError:
       {
+        close();
+        return std::unique_ptr<Message>(new Message(Message::CUPS, Message::CUPS.CompressorError,
+                                                    static_cast<int>(lastCompressorError),
+                                                    0, 0, 0));        
       }
       break;
       
     default:
       {
+        close();
         return Message::MakeNACK(m, 0, "Invalid CUPS message subtype");
       }
 
           
     }
-    
+
+    close();
     return Message::MakeACK(m);
   }
   

@@ -182,7 +182,6 @@ int main(int argc, char ** argv) {
         debug << "Got an event: " << message.toString() << endl;
         
         if(message.header.subType == Message::Image.SendImage) {
-          /*
           char name[64];
           sprintf(name, "/data/cap%d.yuv", currFrame);
           currFrame++;
@@ -199,7 +198,6 @@ int main(int argc, char ** argv) {
             pDat += toWrite;
           }
           debug << Debug::Mode::Info << "Wrote an image to " << name << std::endl;
-          */
         }
         if((++currFrame % 50) == 0) {
           time(&nowt);

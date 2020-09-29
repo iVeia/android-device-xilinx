@@ -112,6 +112,7 @@ namespace iv4 {
 
     // Read from the individual status registers (i2c:0x64)
     //                             // REgister number
+    // TODO: This could all use some cleanup.  I should be using constants for register addresses
     float lastThermistorTemp;
     bool   readThermistorTemp();   // 0x00
 

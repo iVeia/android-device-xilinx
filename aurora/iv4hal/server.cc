@@ -45,10 +45,12 @@ int main(int argc, char ** argv) {
   debug.SetThreshold(Debug::Mode::Info); // Don't print out debugging information by default
   debug.SetDefault(Debug::Mode::Debug);  // Default all debug statements to Mode::Debug
 
+  debug << Debug::Mode::Warn << " **************** ";
   debug << Debug::Mode::Warn << "Starting iv4 HAL server v" << 
     IV4HAL_MAJOR << "." <<
     IV4HAL_MINOR << "." <<
-    IV4HAL_PATCH << std::endl;
+    IV4HAL_PATCH;
+  debug << Debug::Mode::Warn << " **************** " << std::endl;
     
   // Register a signal handler so that we can exit gracefully when ctrl-c is pressed
   signal (SIGINT, signalHandler);
@@ -58,8 +60,11 @@ int main(int argc, char ** argv) {
   bool simulate = false;
   bool use_cam  = true;
   bool use_cups = true;
+  bool init_on_start = false;
   for(int i = 1; i < argc; i++) {
     if(std::string(argv[i]) == "-s") simulate = true;
+
+    if(std::string(argv[i]) == "-i") init_on_start = true;
     
     else if(std::string(argv[i]) == "-d") debug.SetThreshold(Debug::Mode::Debug);
     else if(std::string(argv[i]) == "-q") debug.SetThreshold(Debug::Mode::Warn);
@@ -167,8 +172,20 @@ int main(int argc, char ** argv) {
           }
         } // ------------ End case Message::Image ------------
         break;
+
+      case Message::CUPS:
+        {
+          debug << "Processing ChillUPS message" << std::endl;
+          if(cups != nullptr) {
+            resp.push_back(cups->ProcessMessage(message));
+          } else {
+            resp.push_back(Message::MakeNACK(message, 0, "iv4hal is running without ChillUPS support"));
+          }
+        }
+        break;
         
       default:
+        resp.push_back(Message::MakeNACK(message, 0, "Unsupported message type"));
         break;
       } // end switch
     } // end if(!initialized)
@@ -188,6 +205,10 @@ int main(int argc, char ** argv) {
       server.Send(*resp[i]);
     }
   }, true);
+
+  if(init_on_start) {
+    cups->Initialize(eventServer);
+  }
 
   // Our event loop
   bool done = false;
@@ -267,7 +288,7 @@ int main(int argc, char ** argv) {
       cam.ProcessMainLoop(eventServer);
     }
 
-    if(cups != nullptr) {
+    if(cups != nullptr && initialized) {
       cups->ProcessMainLoop(eventServer);
     }
     

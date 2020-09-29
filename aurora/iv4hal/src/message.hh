@@ -148,7 +148,8 @@ namespace iv4 {
       //! Set defrost settings
       /*!
         imm[0] : defrost period
-        imm[1] : defrost limit
+        imm[1] : defrost length
+        imm[2] : defrost limit
       */
       constexpr static uint8_t SetDefrostParams     = 0x20;
       //! Get defrost settings
@@ -156,7 +157,8 @@ namespace iv4 {
 
         On receive
         imm[0] : defrost period
-        imm[1] : defrost limit
+        imm[1] : defrost length
+        imm[2] : defrost limit
       */
       constexpr static uint8_t GetDefrostParams    = 0x21;
       //! Initiate defrost
@@ -173,6 +175,14 @@ namespace iv4 {
           <name>:<value>
       */
       constexpr static uint8_t GetAllVoltages      = 0x38;
+      //! Get the battery charge percent
+      /*!
+        No parameters on send
+
+        On receive
+        imm[0] : The current battery percent as an integer
+      */
+      constexpr static uint8_t GetBatteryPercent   = 0x3A;
       //! Get stored temperatures
       /*!
         No parameters on send
@@ -199,6 +209,7 @@ namespace iv4 {
         case InitiateDefrost      : return "CUPS::InitiateDefrost";
         case IntiiateBatteryTest  : return "CUPS::IntiiateBatteryTest";
         case GetAllVoltages       : return "CUPS::GetAllVoltages";
+        case GetBatteryPercent    : return "CUPS::GetBatteryPercent";
         case GetStoredTemperatures: return "CUPS::GetStoredTemperatures";
         case CompressorError      : return "CUPS::CompressorError";
         default                   : return "CUPS::Invalid";
