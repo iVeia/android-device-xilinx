@@ -13,7 +13,7 @@ namespace iv4 {
   class DSBInterface {
 
   public:
-    DSBInterface(std::string dev);
+    DSBInterface(std::string dev, unsigned int poll_rate_s = 2);
     ~DSBInterface();
 
     std::unique_ptr<Message>ProcessMessage(const Message &msg);
@@ -27,13 +27,12 @@ namespace iv4 {
   protected:
 
     std::string _dev;
-    bool send(FDManager &fd, uint8_t addr, uint8_t type, bool read,
+    int devFD;
+    bool send(uint8_t addr, uint8_t type, bool read,
               std::vector<uint8_t> dat);
-    bool _recv(FDManager &fd,
-              uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
+    bool _recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
               int timeoutMS);
-    bool recv(FDManager &fd,
-              uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
+    bool recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
               int timeoutMS = 100);
 
     // Class to store information on a single drawer sensor board
@@ -95,10 +94,13 @@ namespace iv4 {
     std::vector<DrawerEvent> events;
 
     time_t tLastUpdate;
-    static const uint8_t DSB_UPDATE_FREQ = 2; // Update every 2 seconds
+    unsigned int dsbUpdateFreq;
+    static const uint8_t DSB_UPDATE_FREQ = 1; // Update every 2 seconds
     
   private:
     static const uint8_t BROADCAST_ADDRESS = 31;
+
+    static const uint8_t GLOBAL_LOCK_TYPE  = 0x02;
 
     static const uint8_t GET_STATUS_TYPE   = 0x03;
     static const uint8_t GET_STATUS_RETURN = 0x83;

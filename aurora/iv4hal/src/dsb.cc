@@ -9,22 +9,20 @@
 
 using namespace iv4;
 
-DSBInterface::DSBInterface(std::string dev) {
-  discoverCountdown = 0;
-  tLastUpdate = 0;
-  _dev = dev;
-}
-
-DSBInterface::~DSBInterface() {
-}
-
-static bool setupFD(int fd) {
+static int setupFD(std::string &file) {
   struct termios   options;
   int rc;
   
+  int fd = open(file.c_str(), O_RDWR | O_NOCTTY);
+  if(fd < 0) {
+    debug << Debug::Mode::Failure << "Failed to open RS-485 device: " << file << std::endl;
+    debug << Debug::Mode::Failure << strerror(errno) << std::endl;
+    return -1;
+  }
+
   if((rc = tcgetattr(fd, &options)) < 0){
     debug << Debug::Mode::Err << "Failed to get RS485 options" << std::endl;
-    return false;
+    return -1;
   }
   
   // Set the baud rates to 115200
@@ -43,11 +41,28 @@ static bool setupFD(int fd) {
   // Set the new attributes
   if((rc = tcsetattr(fd, TCSANOW, &options)) < 0){
     debug << Debug::Mode::Err << "Failed to set RS485 options" << std::endl;
-    return false;
+    return -1;
   }
 
   debug << "Set up RS-485" << std::endl;
-  return true;
+  return fd;
+}
+
+DSBInterface::DSBInterface(std::string dev, unsigned int update_rate_s) {
+  discoverCountdown = 0;
+  tLastUpdate = 0;
+
+  if(update_rate_s > 0 && update_rate_s < (60 * 5))
+    dsbUpdateFreq = update_rate_s;
+  else
+    dsbUpdateFreq = DSB_UPDATE_FREQ;
+  
+  _dev = dev;
+  devFD = setupFD(_dev);
+}
+
+DSBInterface::~DSBInterface() {
+  if(devFD >= 0) close(devFD);
 }
 
 std::unique_ptr<Message> DSBInterface::ProcessMessage(const Message &msg) {
@@ -143,13 +158,6 @@ bool DSBInterface::Initialize(SocketInterface &intf, bool send) {
 }
 
 bool DSBInterface::ProcessMainLoop(SocketInterface &intf, bool send) {
-  FDManager fd(_dev, O_RDWR | O_NOCTTY | O_NDELAY);
-  if(!fd.Good()) {
-    debug << Debug::Mode::Err << "Failed to open serial port: " << strerror(fd.Err()) << std::endl;
-    return false;
-  }
-  
-
   time_t tnow = time(nullptr);
 
   // First, check to see if we are awaiting on a reset discovery
@@ -169,7 +177,7 @@ bool DSBInterface::ProcessMainLoop(SocketInterface &intf, bool send) {
   
   // Check to see if we need to do an update
   if((tLastUpdate > tnow) ||
-     ((tnow - tLastUpdate) > DSB_UPDATE_FREQ)) {
+     ((tnow - tLastUpdate) > dsbUpdateFreq)) {
     getDrawerStatus();
     // The drawer is supposed to send us status changes as broadcast messages,
     //  but we will check here to see if there are any errors
@@ -200,25 +208,19 @@ bool DSBInterface::ProcessMainLoop(SocketInterface &intf, bool send) {
     // If we don't have to do an update:
     // get a message (with a very small timeout) to check to see if there are any
     //  pending messages
-    FDManager fd(_dev, O_RDWR | O_NOCTTY);
-    if(!fd.Good()) {
-      debug << Debug::Mode::Err << "Failed to open serial port: " << strerror(fd.Err()) << std::endl;
-      return false;
-    }
-    setupFD(fd.FD());
-    
     std::vector<uint8_t> rmsg;
     uint8_t raddr, rtype;
-    if(!recv(fd, raddr, rtype, rmsg, 1)) {
-      debug << "Update loop read timed out" << std::endl;
+    if(!recv(raddr, rtype, rmsg, 1)) {
+      // Timed out, no big deal
+      //  debug << "Update loop read timed out" << std::endl;
     }
   }
 
   // If there are broadcast messages send them now
   if(send) {
-    debug << "Sending " << events.size() << " events" << std::endl;
+    if(events.size() > 0) debug << "Sending " << events.size() << " events" << std::endl;
     for(DrawerEvent evt : events) {
-      Message msg(Message::DSB, Message::DSB.DrawerErrors,
+      Message msg(Message::DSB, Message::DSB.DrawerStateChanged,
                   evt.index, evt.solenoid, evt.event, evt.position);
       debug << "Sending dsb drawer event" << std::endl;
       intf.Send(msg);      
@@ -239,12 +241,14 @@ uint32_t DSBInterface::GetVersions() const {
 
   for(const DSB &dsb : dsbs) {
     vers = ((vers << 8) & 0xFFFFFF00) | (dsb.version & 0x000000FF);
+    debug << std::hex << "0x" << vers << " :: ";
   }
+  debug << std::dec << std::endl;
 
   return vers;
 }
 
-bool DSBInterface::send(FDManager &fd, uint8_t addr, uint8_t type,
+bool DSBInterface::send(uint8_t addr, uint8_t type,
                         bool read, std::vector<uint8_t> dat) {
   // address 31 is a broadcast  
   bool bcast = (addr == 31);
@@ -260,7 +264,6 @@ bool DSBInterface::send(FDManager &fd, uint8_t addr, uint8_t type,
   //  6:5: Length (0=1, 1=2, 2=4)
   //  4:0: Address
   // For the length, if we are trying to send three bytes, pad it to 4 with a zero
-  //  TODO: Is the above appropriate?
   uint8_t start = ((read)?(0x80) : (0x00)) | (addr & 0x1F);
   switch(msg_size) {
   case 1: break;
@@ -289,7 +292,7 @@ bool DSBInterface::send(FDManager &fd, uint8_t addr, uint8_t type,
   //  Broadcast messages are always sent three times
   int count = (bcast) ? 3 : 1;
   while(count > 0) {
-    int ret = write(fd.FD(), dat.data(), dat.size());
+    int ret = write(devFD, dat.data(), dat.size());
     debug << "DSB sent: " << ret << std::endl;
 
     if(ret < 0) {
@@ -309,12 +312,11 @@ bool DSBInterface::send(FDManager &fd, uint8_t addr, uint8_t type,
   return true;
 }
 
-bool DSBInterface::recv(FDManager &fd, 
-                        uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
+bool DSBInterface::recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
                         int timeoutMS) {
   while(true) {
     msg.clear();
-    bool ret = _recv(fd, addr, type, msg, timeoutMS);
+    bool ret = _recv(addr, type, msg, timeoutMS);
 
     if(ret && (addr == BROADCAST_ADDRESS)) {
       debug << " ****** Got a broadcast" << std::endl;
@@ -330,7 +332,7 @@ bool DSBInterface::recv(FDManager &fd,
         evt.solenoid = (msg[1] >> 6) & 0x03;
         evt.position = (msg[1] & 0x0F);
         evt.open = ( (msg[1] & 0x20) != 0);
-        evt.event = ((msg[1] & 0xF0) == 0); // In the message, 0 is unlock, 1 is lock
+        evt.event = ((msg[1] & 0x10) == 0); // In the message, 0 is unlock, 1 is lock
         events.push_back(evt);
       } else {
         debug << Debug::Mode::Err << "Unknown event type: " << std::hex << (int)type <<
@@ -344,8 +346,7 @@ bool DSBInterface::recv(FDManager &fd,
   }
 }
 
-bool DSBInterface::_recv(FDManager &fd,
-                        uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
+bool DSBInterface::_recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
                         int timeoutMS) {
   // Check to see if we have any bytes to read
   int avail = 0;
@@ -371,7 +372,7 @@ bool DSBInterface::_recv(FDManager &fd,
     }
 
     // Then check to see if we have any bytes
-    int ret = ioctl(fd.FD(), FIONREAD, &avail);
+    int ret = ioctl(devFD, FIONREAD, &avail);
     if(ret < 0) {
       debug << "dsb ioctl < 0" << ret << std::endl;
       if(errno == EAGAIN) {
@@ -387,7 +388,7 @@ bool DSBInterface::_recv(FDManager &fd,
     else if(avail > 0) {
     
       uint8_t byte;
-      read(fd.FD(), &byte, 1);
+      read(devFD, &byte, 1);
       switch(state) {
       case 0: // This is the header
         if(byte == 0) continue; // Skip all leading zero bytes
@@ -407,9 +408,9 @@ bool DSBInterface::_recv(FDManager &fd,
         break;
       case 3: // CRC
         crc = byte;
-        debug << "MSG: " << std::hex << addr << ":" << len << ":" << type << ":";
-        for(unsigned int i = 0; i < msg.size(); i++) debug << msg[i] << ":";
-        debug << crc << std::dec << std::endl;
+        debug << "MSG: " << std::hex << (int)addr << ":" <<  (int)len << ":" <<  (int)type << ":";
+        for(unsigned int i = 0; i < msg.size(); i++) debug <<  (int)msg[i] << ":";
+        debug <<  (int)crc << std::dec << std::endl;
         done = true;
         break;
       default:
@@ -430,25 +431,20 @@ bool DSBInterface::_recv(FDManager &fd,
 
 // This will populate the dsbs variable
 bool DSBInterface::discover() {
-  FDManager fd(_dev, O_RDWR | O_NOCTTY);
-  if(!fd.Good()) {
-    debug << Debug::Mode::Err << "Failed to open serial port: " << strerror(fd.Err()) << std::endl;
-    return false;
-  }
-  setupFD(fd.FD());
-  
-  // LS4 issues a global lock, global solenoid disable, and global proximity disable to all DSB nodes
-  //   to ensure they do not report MT99 (on drawer change) during discovery
-  std::vector<uint8_t> msg {0x00};
-  if(!send(fd, BROADCAST_ADDRESS, 0x02, false, msg)) {
-    debug << "Failed to send disable message on discover" << std::endl;
+  {
+    // LS4 issues a global lock, global solenoid disable, and global proximity disable to all DSB nodes
+    //   to ensure they do not report MT99 (on drawer change) during discovery
+    std::vector<uint8_t> msg {0x00}; // disallow opening, disable solenoids, disable prox sensors
+    if(!send(BROADCAST_ADDRESS, GLOBAL_LOCK_TYPE, false, msg)) {
+      debug << "Failed to send disable message on discover" << std::endl;
+    }
   }
   
   for(int addr = 1; addr < 14; addr++) {
     {
     // Request info from  the address
       std::vector<uint8_t> msg {0x00};
-      if(!send(fd, addr, 0x01, true, msg)) {
+      if(!send(addr, 0x01, true, msg)) {
         debug << "Failed to send read message to addr: " << addr << std::endl;
         continue;
       }
@@ -457,7 +453,7 @@ bool DSBInterface::discover() {
     // Wait for the response
     std::vector<uint8_t> rmsg;
     uint8_t raddr, rtype;
-    if(!recv(fd, raddr, rtype, rmsg)) {
+    if(!recv(raddr, rtype, rmsg)) {
       debug << "Read from " << (int)addr << " timed out" << std::endl;
       continue;
     }
@@ -518,25 +514,25 @@ bool DSBInterface::discover() {
   
   debug << Debug::Mode::Debug << "Discovered " << dsbs.size() << "dsbs: " << std::endl;
   for(unsigned int i = 0; i < dsbs.size(); i++) {
-    debug << Debug::Mode::Debug << "\tAddr:" << (dsbs[i].bootLoaderMode ? "*" : " ") << dsbs[i].address <<
+    debug << Debug::Mode::Debug << "\tAddr:" << (dsbs[i].bootLoaderMode ? "*" : " ") << (int)dsbs[i].address <<
       " Ver: " << std::hex << (int)dsbs[i].version << std::dec <<
       "(" << dsbs[i].drawers.size() << ")" << std::endl;
+  }
+
+  {
+    std::vector<uint8_t> msg {0x07}; // allow opening, solenoids in auto mode, enable prox sensors
+    if(!send(BROADCAST_ADDRESS, GLOBAL_LOCK_TYPE, false, msg)) {
+      debug << "Failed to send disable message on discover" << std::endl;
+    }
   }
   
   return true;
   }
 
 bool DSBInterface::setGlobalLockState(bool state) {
-  FDManager fd(_dev, O_RDWR | O_NOCTTY);
-  if(!fd.Good()) {
-    debug << Debug::Mode::Err << "Failed to open serial port: " << strerror(fd.Err()) << std::endl;
-    return false;
-  }
-  setupFD(fd.FD());
-  
   uint8_t val = (state) ? (0x06) : (0x07);
   std::vector<uint8_t> msg {val};
-  if(!send(fd, BROADCAST_ADDRESS, 0x02, false, msg)) {
+  if(!send(BROADCAST_ADDRESS, 0x02, false, msg)) {
     debug << "Failed to send set global lock broadcast" << std::endl;
     return false;
   }
@@ -547,16 +543,9 @@ bool DSBInterface::setGlobalLockState(bool state) {
 }
 
 bool DSBInterface::setFactoryMode(bool state) {
-  FDManager fd(_dev, O_RDWR | O_NOCTTY);
-  if(!fd.Good()) {
-    debug << Debug::Mode::Err << "Failed to open serial port: " << strerror(fd.Err()) << std::endl;
-    return false;
-  }
-  setupFD(fd.FD());
-  
   uint8_t val = (state) ? (0x01) : (0x00);
   std::vector<uint8_t> msg {val};
-  if(!send(fd, BROADCAST_ADDRESS, FACTORY_MODE_TYPE, false, msg)) {
+  if(!send(BROADCAST_ADDRESS, FACTORY_MODE_TYPE, false, msg)) {
     debug << "Failed to send set factory mode broadcast" << std::endl;
     return false;
   }
@@ -567,17 +556,10 @@ bool DSBInterface::setFactoryMode(bool state) {
 }
 
 bool DSBInterface::clearDrawerIndices() {
-  FDManager fd(_dev, O_RDWR | O_NOCTTY);
-  if(!fd.Good()) {
-    debug << Debug::Mode::Err << "Failed to open serial port: " << strerror(fd.Err()) << std::endl;
-    return false;
-  }
-  setupFD(fd.FD());
-  
   // LS4 issues a global lock, global solenoid disable, and global proximity disable to all DSB nodes
   //   to ensure they do not report MT99 (on drawer change) during discovery
   std::vector<uint8_t> msg {0x00};
-  if(!send(fd, BROADCAST_ADDRESS, 0x21, false, msg)) {
+  if(!send(BROADCAST_ADDRESS, 0x21, false, msg)) {
     debug << "Failed to send clear indices broadcast" << std::endl;
     return false;
   }
@@ -588,17 +570,10 @@ bool DSBInterface::clearDrawerIndices() {
 bool DSBInterface::assignDrawerIndex(uint8_t index) {
   if(index < 0 || index > 13) return false;
 
-  FDManager fd(_dev, O_RDWR | O_NOCTTY);
-  if(!fd.Good()) {
-    debug << Debug::Mode::Err << "Failed to open serial port: " << strerror(fd.Err()) << std::endl;
-    return false;
-  }
-  setupFD(fd.FD());
-
   // Send the index value
   uint8_t val = index & 0x0F;
   std::vector<uint8_t> msg {val};
-  if(!send(fd, BROADCAST_ADDRESS, 0x22, false, msg)) {
+  if(!send(BROADCAST_ADDRESS, 0x22, false, msg)) {
     debug << "Failed to send set index broadcast" << std::endl;
     return false;
   }
@@ -611,16 +586,9 @@ bool DSBInterface::updateFirmware(std::string fw_path) {
 }
 
 bool DSBInterface::globalReset() {
-  FDManager fd(_dev, O_RDWR | O_NOCTTY);
-  if(!fd.Good()) {
-    debug << Debug::Mode::Err << "Failed to open serial port: " << strerror(fd.Err()) << std::endl;
-    return false;
-  }
-  setupFD(fd.FD());
-  
   // Clear everything out
   std::vector<uint8_t> msg {0x00};
-  if(!send(fd, BROADCAST_ADDRESS, GLOBAL_RESET_TYPE, false, msg)) {
+  if(!send(BROADCAST_ADDRESS, GLOBAL_RESET_TYPE, false, msg)) {
     debug << "Failed to send global reset broadcast" << std::endl;
     return false;
   }
@@ -632,17 +600,10 @@ bool DSBInterface::globalReset() {
 }
 
 bool DSBInterface::getDrawerTemps() {
-  FDManager fd(_dev, O_RDWR | O_NOCTTY);
-  if(!fd.Good()) {
-    debug << Debug::Mode::Err << "Failed to open serial port: " << strerror(fd.Err()) << std::endl;
-    return false;
-  }
-  setupFD(fd.FD());
-
   // For each DSB in dsbs, get the temp
   for(DSB &dsb : dsbs) {
     std::vector<uint8_t> msg {0x00};
-    if(!send(fd, dsb.address, GET_TEMP_TYPE, true, msg)) {
+    if(!send(dsb.address, GET_TEMP_TYPE, true, msg)) {
       debug << "Failed to send get temp message to " << (int)dsb.address << std::endl;
       continue;
     }
@@ -651,7 +612,7 @@ bool DSBInterface::getDrawerTemps() {
     {
       std::vector<uint8_t> rmsg;
       uint8_t raddr, rtype;
-      if(!recv(fd, raddr, rtype, rmsg)) {
+      if(!recv(raddr, rtype, rmsg)) {
         debug << "Read from " << (int)dsb.address << " timed out" << std::endl;
         continue;
       }
@@ -680,18 +641,11 @@ bool DSBInterface::getDrawerTemps() {
 }
 
 bool DSBInterface::getDrawerStatus() {
-  FDManager fd(_dev, O_RDWR | O_NOCTTY);
-  if(!fd.Good()) {
-    debug << Debug::Mode::Err << "Failed to open serial port: " << strerror(fd.Err()) << std::endl;
-    return false;
-  }
-  setupFD(fd.FD());
-
   // For each DSB in dsbs:
   for(DSB &dsb : dsbs) {
     {
       std::vector<uint8_t> msg {0x00};
-      if(!send(fd, dsb.address, GET_STATUS_TYPE, true, msg)) {
+      if(!send(dsb.address, GET_STATUS_TYPE, true, msg)) {
         debug << "Failed to send get status message to " << (int)dsb.address << std::endl;
         continue;
       }
@@ -701,7 +655,7 @@ bool DSBInterface::getDrawerStatus() {
     {
       std::vector<uint8_t> rmsg;
       uint8_t raddr, rtype;
-      if(!recv(fd, raddr, rtype, rmsg)) {
+      if(!recv(raddr, rtype, rmsg)) {
         debug << "Read from " << (int)dsb.address << " timed out" << std::endl;
         continue;
       }
@@ -723,7 +677,8 @@ bool DSBInterface::getDrawerStatus() {
       }
             
       // We will be assuming the DSB reported the drawers in order
-      //  TODO: Check if this is true
+      //  TODO: For the test systems this is not always true, so the check was removed
+      //        add it back in for better testing if needed
       // For each drawer in dsb.drawers      
       for(unsigned int curr = 0; curr < dsb.drawers.size(); curr++) {
         // Get the drawer
@@ -749,16 +704,9 @@ bool DSBInterface::getDrawerStatus() {
 
 bool DSBInterface::getErrors(DSB &dsb, std::vector<uint8_t> &errors) {
   // Get the errors from a single DSB.  This clears the error log
-  FDManager fd(_dev, O_RDWR | O_NOCTTY);
-  if(!fd.Good()) {
-    debug << Debug::Mode::Err << "Failed to open serial port: " << strerror(fd.Err()) << std::endl;
-    return false;
-  }
-  setupFD(fd.FD());
-
   {
     std::vector<uint8_t> msg {0x00};
-    if(!send(fd, dsb.address, GET_ERRORS_TYPE, true, msg)) {
+    if(!send(dsb.address, GET_ERRORS_TYPE, true, msg)) {
       debug << "Failed to send get errors message to " << (int)dsb.address << std::endl;
       return false;
     }
@@ -768,7 +716,7 @@ bool DSBInterface::getErrors(DSB &dsb, std::vector<uint8_t> &errors) {
   {
     std::vector<uint8_t> rmsg;
     uint8_t raddr, rtype;
-    if(!recv(fd, raddr, rtype, rmsg)) {
+    if(!recv(raddr, rtype, rmsg)) {
       debug << "Read from " << (int)dsb.address << " timed out" << std::endl;
       return false;
     }

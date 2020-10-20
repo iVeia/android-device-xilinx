@@ -10,7 +10,9 @@ LOCAL_SRC_FILES := \
 	src/socket_interface.cc \
 	src/support.cc \
 	src/camera.cc \
-	src/chillups.cc
+	src/chillups.cc \
+	src/dsb.cc \
+	src/hardware.cc
 
 LOCAL_CPP_EXTENSION := cc
 
@@ -38,7 +40,9 @@ LOCAL_SRC_FILES := \
 	src/message.cc \
 	src/socket_interface.cc \
 	src/camera.cc \
-	src/chillups.cc
+	src/chillups.cc \
+	src/dsb.cc \
+	src/hardware.cc
 
 LOCAL_CPP_EXTENSION := cc
 

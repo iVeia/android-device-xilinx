@@ -26,6 +26,7 @@ namespace iv4 {
         No parameters on send
 
         On receive:
+        Imm[1] - DSB versions (each byte for one DSB - nibbles: major.minor)
         Imm[2] - Chillups version
         Imm[3] - HAL Server version
       */
@@ -193,12 +194,26 @@ namespace iv4 {
           <id>:<temp>
       */
       constexpr static uint8_t GetStoredTemperatures = 0x40;
+      //! Get probe ids
+      /*!
+        imm[0] : Number of probes
+        
+        payload: a null terminated list of ids in the form
+                 <probe_name>:<id>
+      */
+      constexpr static uint8_t GetProbeIDs           = 0x50;
       //! Compressor Error event
       /*!
         imm[0] : Bitfield of errors
-      */
-      constexpr static uint8_t CompressorError      = 0xB0;
+      */       
+      constexpr static uint8_t CompressorError       = 0xB0;
 
+      //TODO: These
+      constexpr static uint8_t Failure               = 0xB2; 
+      constexpr static uint8_t BatteryStateChanged   = 0xB4; 
+      constexpr static uint8_t ACStateChanged        = 0xB5;
+      constexpr static uint8_t TemperatureOutOfRange = 0xB6; 
+      
       std::string toString(uint8_t sub) {
         switch(sub) {
         case SetTemperature       : return "CUPS::SetTemperature";
@@ -211,12 +226,116 @@ namespace iv4 {
         case GetAllVoltages       : return "CUPS::GetAllVoltages";
         case GetBatteryPercent    : return "CUPS::GetBatteryPercent";
         case GetStoredTemperatures: return "CUPS::GetStoredTemperatures";
+        case GetProbeIDs          : return "CUPS::GetProbeIDs";
         case CompressorError      : return "CUPS::CompressorError";
         default                   : return "CUPS::Invalid";
         }
       }
 
     } CUPS;
+
+    static struct _DSBMessage {
+      //! HAL DSB message type
+      constexpr operator uint8_t() const {return  0x04;}
+      //! Reset all DSBs
+      constexpr static uint8_t Reset               = 0x10;
+      //! Set global lock
+      /*!
+        imm[0] : Lock state.  0 => Off, anything else is on
+      */      
+      constexpr static uint8_t SetGlobalLock       = 0x12;
+      //! Set factory mode
+      /*!
+        imm[0] : Factory mode state
+      */
+      constexpr static uint8_t SetFactoryMode      = 0x14;
+      //! Clear drawer indices
+      constexpr static uint8_t ClearDrawerIndices  = 0x16;
+      //! Assign drawer index
+      /*! 
+        imm[0] : Index
+      */
+      constexpr static uint8_t AssignDrawerIndex   = 0x17;
+      //! Get drawer states
+      /*!
+        from client: no parameters
+
+        from server:
+        imm[0]: Number of drawer states
+
+        payload: a null-terminator delimeted list of:
+            <drawer_num>:<solenoid>:<open>:<position>:<temp>
+        where
+            drawer_num is the assigned drawer number
+            solenoid is 0 => locked, 1 => unlocked, 2 => unlocking (picked), 3 => failed
+            open is 1 => opened, 2 => closed
+            position is the distance of the drawer from the sensor in mm
+                  The maximum is 15mm, so a value of 15 indicates >= 15mm
+            temp is the drawer temperature.  
+                  Note: This is at the DSB level, so multiple drawers will have the same temp
+      */      
+      constexpr static uint8_t GetDrawerStates    = 0x20;
+      //! Drawer state changed event
+      /*!
+        imm[0] : Drawer index
+        imm[1] : solenoid state (as per get drawer state)
+        imm[2] : open state (as per get drawer state)
+        imm[3] : position (as per get drawer state)
+      */
+      constexpr static uint8_t DrawerStateChanged = 0x22;
+      //! Update DSB firmware
+      /*!
+        payload: string to firmware path
+      */
+      constexpr static uint8_t UpdateFirmware     = 0x60;
+      //! Errors were recorded by a drawer
+      /*!
+        Sent from the server as an event when an error is detected
+        imm[0] - Address or DSB reporting errors
+        imm[1] - number of errors
+        
+        payload: Null-terminator delineated list of error codes
+      */
+      constexpr static uint8_t DrawerErrors       = 0xA0;
+
+      std::string toString(uint8_t sub) {
+        switch(sub) {
+        case Reset              : return "DSB::Reset";
+        case SetGlobalLock      : return "DSB::SetGlobalLock";
+        case SetFactoryMode     : return "DSB::SetFactoryMode";
+        case ClearDrawerIndices : return "DSB::ClearDrawerIndices";
+        case AssignDrawerIndex  : return "DSB::AssignDrawerIndex";
+        case GetDrawerStates    : return "DSB::GetDrawerStates";
+        case DrawerStateChanged : return "DSB::DrawerStateChanged";
+        case DrawerErrors       : return "DSB::DrawerErrors";
+        case UpdateFirmware     : return "DSB::UpdateFirmware";
+        default                 : return "DSB::Invalid";
+        }
+      }
+      
+    } DSB;
+
+    static struct _LightsMessage {
+      //! HAL message to interact with lights
+      constexpr operator uint8_t() const {return 0x05;}
+      //! Set the state of the lights
+      /*!
+        imm[0] : The value to set the pot to
+      */
+      constexpr static uint8_t SetLights    = 0x10;
+      //! Get the state of the lights
+      /*!
+        imm[0] : The current value of the lights
+      */
+      constexpr static uint8_t GetLights    = 0x20;
+      std::string toString(uint8_t sub) {
+        switch(sub) {
+        case SetLights: return "Lights::SetLights";
+        case GetLights: return "Lights::GetLights";
+        default       : return "Lights::Invalid";
+        }
+      }
+    } Lights;
     
     //! The message header for HAL messages
     /*!

@@ -15,6 +15,8 @@
 #include "message.hh"
 #include "camera.hh"
 #include "chillups.hh"
+#include "dsb.hh"
+#include "hardware.hh"
 
 using namespace iv4;
 using namespace std;
@@ -60,7 +62,9 @@ int main(int argc, char ** argv) {
   bool simulate = false;
   bool use_cam  = true;
   bool use_cups = true;
+  bool use_dsb  = true;
   bool init_on_start = false;
+  unsigned int update_freq = 2;
   for(int i = 1; i < argc; i++) {
     if(std::string(argv[i]) == "-s") simulate = true;
 
@@ -68,13 +72,16 @@ int main(int argc, char ** argv) {
     
     else if(std::string(argv[i]) == "-d") debug.SetThreshold(Debug::Mode::Debug);
     else if(std::string(argv[i]) == "-q") debug.SetThreshold(Debug::Mode::Warn);
+    
+    else if(std::string(argv[i]) == "-f") {
+      i++;
+      if(i >= argc) break;
+      update_freq = atoi(argv[i]);
+    }
 
-    else if(std::string(argv[i]) == "--cam=1") use_cam = true;
     else if(std::string(argv[i]) == "--cam=0") use_cam = false;
-
-    else if(std::string(argv[i]) == "--cups=1") use_cups = true;
     else if(std::string(argv[i]) == "--cups=0") use_cups = false;
-            
+    else if(std::string(argv[i]) == "--dsb=0") use_dsb = false;
   }
 
   debug << Debug::Mode::Debug << "Debug statements visible" << std::endl;
@@ -82,6 +89,8 @@ int main(int argc, char ** argv) {
   debug << Debug::Mode::Warn  << "Warn  statements visible" << std::endl;
   debug << Debug::Mode::Err   << "Error statements visible" << std::endl;
 
+  debug << Debug::Mode::Info << "Update frequency = " << update_freq << std::endl;
+  
   bool initialized = false;
 
   // Create all our cameras -
@@ -108,13 +117,18 @@ int main(int argc, char ** argv) {
     cups = new ChillUPSInterface("/dev/i2c-5");
   }
 
+  DSBInterface *dsb = nullptr;
+  if(use_dsb) {
+    dsb = new DSBInterface("/dev/ttyUSB0", update_freq);
+  }
+
   SocketInterface eventServer([] (const Message &msg) {
     //  What to do?  This interface is for sending async events to the client
     //  We should not be getting messages on it...
   }, true, IV4HAL_EVENT_SOCK_NAME);
   
   // Create our listening socket
-  SocketInterface server([&server, &cameras, &initialized, cups, &eventServer](const Message &message) {
+  SocketInterface server([&server, &cameras, &initialized, cups, dsb, &eventServer](const Message &message) {
     debug << "Message received: " << message.header.toString() << std::endl;
     
     std::vector<std::unique_ptr<Message>> resp;
@@ -133,7 +147,12 @@ int main(int argc, char ** argv) {
         if(cups != nullptr) {
           cups->Initialize(eventServer);
           debug << "Initialized ChillUPS" << std::endl;
-        }
+        } else debug << "Skipping cups init" << std::endl;
+
+        if(dsb != nullptr) {
+          dsb->Initialize(eventServer);
+          debug << "Initialized DSBs" << std::endl;
+        } else debug << "Skipping dsb init" << std::endl;
       } else {
         // We are trying to initialize when we already are.  No harm there?        
       }
@@ -150,8 +169,16 @@ int main(int argc, char ** argv) {
         ((IV4HAL_MAJOR << 16) & 0x00FF0000) |
         ((IV4HAL_MINOR <<  8) & 0x0000FF00) |
         ((IV4HAL_PATCH <<  0) & 0x000000FF);
+
+      uint32_t drev = 0;
+      if(dsb != nullptr) {
+        uint32_t dcount = dsb->Count();
+        debug << "Found " << dcount << " dsbs" << std::endl;
+        drev = dsb->GetVersions();
+      }
+
       resp.push_back(std::unique_ptr<Message>(new Message(Message::Management, Message::Management.Initialize,
-                                                          0, 0, crev, rev)));
+                                                          0, drev, crev, rev)));
 
       // Keep track of the fact that we have been initialized
       initialized = true;
@@ -183,6 +210,36 @@ int main(int argc, char ** argv) {
           }
         }
         break;
+
+      case Message::DSB:
+        {
+          debug << "Processing DSB message" << std::endl;
+          if(dsb != nullptr) {
+            resp.push_back(dsb->ProcessMessage(message));
+          } else {
+            resp.push_back(Message::MakeNACK(message, 0, "iv4hal is running without DSB support"));
+          }
+        }
+        break;
+
+      case Message::Lights:
+        {
+          //TODO: Roll this into its own class/handler
+          if(message.header.subType == Message::Lights.SetLights) {
+            debug << "Setting pot to " << std::hex << (int)message.header.imm[0] <<
+              std::dec << std::endl;
+            SetPot("/dev/i2c-5", 0x2C, message.header.imm[0]);
+            resp.push_back(Message::MakeACK(message));
+          } else if(message.header.subType == Message::Lights.GetLights) {
+            uint8_t val = GetPot("/dev/i2c-5", 0x2C);
+            debug << "Got pot value of " << std::hex << (int)val <<
+              std::dec << std::endl;
+            resp.push_back(unique_ptr<Message>(new Message(Message::Lights, Message::Lights.GetLights,
+                                                           val, 0, 0, 0)));            
+          }
+
+        }
+        break;
         
       default:
         resp.push_back(Message::MakeNACK(message, 0, "Unsupported message type"));
@@ -206,12 +263,16 @@ int main(int argc, char ** argv) {
     }
   }, true);
 
+  // This is for debugging the initialization routines only
+  //  If an initialization message is sent, it will result in double initialization
   if(init_on_start) {
-    cups->Initialize(eventServer);
+    if(cups != nullptr) cups->Initialize(eventServer);
+    if(dsb != nullptr) dsb->Initialize(eventServer);
   }
 
   // Our event loop
   bool done = false;
+  debug << "Entered event loop" << std::endl;
   while(!exiting) {
 
     // Check to see if we have been signaled to stop, and if so kill the manager and the server
@@ -273,7 +334,7 @@ int main(int argc, char ** argv) {
     if(FD_ISSET(efd, &sockset) && !exiting) {
       debug << " ----------------------------- Processing events" << std::endl;
       if(!eventServer.Process(&sockset)) {
-        
+        // What to do when the event server fails?
       }
     }
 
@@ -283,13 +344,16 @@ int main(int argc, char ** argv) {
     // Always call the camera stuff regardless of the select return value
     //  If they don't have anything to do they just return as they are non-blocking
     for(CameraInterface &cam : cameras) {
-      //debug << "Processing camera: " << (void*)&cam << std::endl;
-      
       cam.ProcessMainLoop(eventServer);
     }
 
+    // Process CUPS next
     if(cups != nullptr && initialized) {
       cups->ProcessMainLoop(eventServer);
+    }
+
+    if(dsb != nullptr && initialized) {
+      dsb->ProcessMainLoop(eventServer);
     }
     
     // TODO: Implement a timeout here so that if we are killed but the sockets dont close

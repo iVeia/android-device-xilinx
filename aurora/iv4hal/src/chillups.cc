@@ -592,7 +592,6 @@ namespace iv4 {
     }
 
     if(lastMainStatus.comprError) {
-      // TODO: There was a compressor error.  Read it and send a message
       i2c_u8 comprError = readCompressorError();
       if(std::get<0>(comprError)) {
         Message msg(Message::CUPS, Message::CUPS.CompressorError,
@@ -611,7 +610,6 @@ namespace iv4 {
       setCompressorBackupState(false);
     }
 
-    // TODO: Send the verion up
     readVersion();
 
     // TODO: What to do with this?
@@ -624,7 +622,6 @@ namespace iv4 {
       // TODO: send an event saying saved temps are available
     }
 
-    // TODO: Need to set this based on data from aggregate
     readSetPoint();
     readTempRange();
 
@@ -635,6 +632,8 @@ namespace iv4 {
     return true;
   }
 
+  //TODO: Instead of having all these close() operations sprinkled everywhere, rely on RAII
+  //      and object destructor
   std::unique_ptr<Message> ChillUPSInterface::ProcessMessage(const Message &m) {
     if(m.header.type != Message::CUPS) return Message::MakeNACK(m, 0, "Invalid message passed to ChillUPSInterface");
 
@@ -651,7 +650,7 @@ namespace iv4 {
           return Message::MakeNACK(m, 0, "Temperature out of range");
         }
 
-        // TODO: No limit to range in the docs
+        // TODO: No limit to range in the docs - determine what a good limit is
         setSetPoint(temp * 0.01);
         setTempRange(range * 0.01);
 
@@ -869,6 +868,13 @@ namespace iv4 {
                                                     payload));        
       }
       break;
+
+    case Message::CUPS.GetProbeIDs:
+      {
+        //TODO: Implement this
+        close();
+        return Message::MakeNACK(m, 0, "Not implemented yet");
+      }
       
     case Message::CUPS.CompressorError:
       {
