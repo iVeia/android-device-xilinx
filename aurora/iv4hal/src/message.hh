@@ -228,6 +228,10 @@ namespace iv4 {
         case GetStoredTemperatures: return "CUPS::GetStoredTemperatures";
         case GetProbeIDs          : return "CUPS::GetProbeIDs";
         case CompressorError      : return "CUPS::CompressorError";
+        case Failure              : return "CUPS::Failure"; 
+        case BatteryStateChanged  : return "CUPS::BatteryStateChanged"; 
+        case ACStateChanged       : return "CUPS::ACStateChanged";
+        case TemperatureOutOfRange: return "CUPS::TemperatureOutOfRange"; 
         default                   : return "CUPS::Invalid";
         }
       }
@@ -237,6 +241,11 @@ namespace iv4 {
     static struct _DSBMessage {
       //! HAL DSB message type
       constexpr operator uint8_t() const {return  0x04;}
+      //! Put all DSBs into BootLoader mode
+      /*!
+        imm[0] : BLM Mode 1 => Enable, 0 => Disable
+      */        
+      constexpr static uint8_t SetBootLoaderMode   = 0x04;
       //! Reset all DSBs
       constexpr static uint8_t Reset               = 0x10;
       //! Set global lock
@@ -264,7 +273,7 @@ namespace iv4 {
         imm[0]: Number of drawer states
 
         payload: a null-terminator delimeted list of:
-            <drawer_num>:<solenoid>:<open>:<position>:<temp>
+            <drawer_num>:<solenoid>:<open>:<position>:<temp>:<status_byte>
         where
             drawer_num is the assigned drawer number
             solenoid is 0 => locked, 1 => unlocked, 2 => unlocking (picked), 3 => failed
@@ -273,6 +282,7 @@ namespace iv4 {
                   The maximum is 15mm, so a value of 15 indicates >= 15mm
             temp is the drawer temperature.  
                   Note: This is at the DSB level, so multiple drawers will have the same temp
+            status_byte is the byte containing the global/local lock, etc
       */      
       constexpr static uint8_t GetDrawerStates    = 0x20;
       //! Drawer state changed event
@@ -300,6 +310,7 @@ namespace iv4 {
 
       std::string toString(uint8_t sub) {
         switch(sub) {
+        case SetBootLoaderMode  : return "DSB::SetBootLoaderMode";
         case Reset              : return "DSB::Reset";
         case SetGlobalLock      : return "DSB::SetGlobalLock";
         case SetFactoryMode     : return "DSB::SetFactoryMode";

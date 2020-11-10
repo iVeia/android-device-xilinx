@@ -64,7 +64,7 @@ int main(int argc, char ** argv) {
   bool use_cups = true;
   bool use_dsb  = true;
   bool init_on_start = false;
-  unsigned int update_freq = 2;
+  unsigned int update_freq = 1;
   for(int i = 1; i < argc; i++) {
     if(std::string(argv[i]) == "-s") simulate = true;
 

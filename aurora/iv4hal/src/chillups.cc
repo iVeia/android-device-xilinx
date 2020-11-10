@@ -619,7 +619,10 @@ namespace iv4 {
     savedTemps.clear();
     readRecordedTemps(savedTemps);
     if(savedTemps.size() > 0) {
-      // TODO: send an event saying saved temps are available
+      // TODO:? send an event saying saved temps are available
+      //  Currently this is handled when the client requests status.  All the saved temps will be sent then
+      //  There is no message for temps available
+      //  Current plan is to leave it that way
     }
 
     readSetPoint();
@@ -630,6 +633,29 @@ namespace iv4 {
 
     close();
     return true;
+  }
+
+  std::string NibbleToHex(uint8_t nibble) {
+    std::string ret = "";
+    if(nibble >= 0 && nibble <= 9) ret.push_back((char)(nibble + '0'));
+    else if(nibble >= 0x0A && nibble < 0x0F) ret.push_back((char)(nibble + 'A'));
+    else ret = "X";
+
+    return ret;
+  }
+    
+  std::string ByteToHex(uint8_t byte) {
+    return NibbleToHex( (byte >> 4) & 0x0F) + NibbleToHex(byte & 0x0F);
+  }
+  
+  std::string ChillUPSInterface::IdToString(chillups_id id) {
+    return ByteToHex(id.family) + ":" +
+      ByteToHex(id.id[0]) + ":" +
+      ByteToHex(id.id[1]) + ":" +
+      ByteToHex(id.id[2]) + ":" +
+      ByteToHex(id.id[3]) + ":" +
+      ByteToHex(id.id[4]) + ":" +
+      ByteToHex(id.id[5]);      
   }
 
   //TODO: Instead of having all these close() operations sprinkled everywhere, rely on RAII
@@ -871,10 +897,23 @@ namespace iv4 {
 
     case Message::CUPS.GetProbeIDs:
       {
-        //TODO: Implement this
+        chillups_id ccid = readColdCubeID();
+        chillups_id aid = readAmbientID();
+        std::vector<uint8_t> payload;
+        std::string ccid_s = std::string("coldcube:") + IdToString(ccid);
+        for(auto c : ccid_s) payload.push_back(c);
+        payload.push_back('\0');
+        
+        std::string aid_s = std::string("ambient:") + IdToString(aid);
+        for(auto c : aid_s) payload.push_back(c);
+        payload.push_back('\0');
+        
         close();
-        return Message::MakeNACK(m, 0, "Not implemented yet");
+        return std::unique_ptr<Message>(new Message(Message::CUPS, Message::CUPS.GetProbeIDs,
+                                                    2, 0, 0, 0,
+                                                    payload));
       }
+      break;
       
     case Message::CUPS.CompressorError:
       {

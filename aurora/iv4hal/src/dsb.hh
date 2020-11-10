@@ -25,7 +25,8 @@ namespace iv4 {
     uint32_t Count() const;
 
   protected:
-
+    int checkCount;
+    
     std::string _dev;
     int devFD;
     bool send(uint8_t addr, uint8_t type, bool read,
@@ -46,6 +47,7 @@ namespace iv4 {
       bool bootLoaderMode;
       char temperature; // signed 8-bit temp
 
+      uint8_t status_byte;
       bool errors;
       bool factoryMode;
       bool proxStatus;
@@ -63,6 +65,8 @@ namespace iv4 {
     std::vector<DSB> dsbs;
     bool discover();
 
+    bool setBootLoaderMode(bool enable);
+    
     bool globalLockState;
     bool setGlobalLockState(bool state);
     bool globalReset();
@@ -98,22 +102,24 @@ namespace iv4 {
     static const uint8_t DSB_UPDATE_FREQ = 1; // Update every 2 seconds
     
   private:
-    static const uint8_t BROADCAST_ADDRESS = 31;
-
-    static const uint8_t GLOBAL_LOCK_TYPE  = 0x02;
-
-    static const uint8_t GET_STATUS_TYPE   = 0x03;
-    static const uint8_t GET_STATUS_RETURN = 0x83;
-
-    static const uint8_t GET_TEMP_TYPE     = 0x04;
-    static const uint8_t GET_TEMP_RETURN   = 0x84;
-                                           
-    static const uint8_t GET_ERRORS_TYPE   = 0x05;
-    static const uint8_t GET_ERRORS_RETURN = 0x85;
-
-    static const uint8_t GLOBAL_RESET_TYPE = 0x06;
-
-    static const uint8_t FACTORY_MODE_TYPE = 0x20;
+    static const uint8_t BROADCAST_ADDRESS         = 31;
+                                                   
+    static const uint8_t GLOBAL_LOCK_TYPE          = 0x02;
+                                                   
+    static const uint8_t GET_STATUS_TYPE           = 0x03;
+    static const uint8_t GET_STATUS_RETURN         = 0x83;
+                                                   
+    static const uint8_t GET_TEMP_TYPE             = 0x04;
+    static const uint8_t GET_TEMP_RETURN           = 0x84;
+                                                   
+    static const uint8_t GET_ERRORS_TYPE           = 0x05;
+    static const uint8_t GET_ERRORS_RETURN         = 0x85;
+                                                   
+    static const uint8_t GLOBAL_RESET_TYPE         = 0x06;
+                                                   
+    static const uint8_t FACTORY_MODE_TYPE         = 0x20;
+                                                   
+    static const uint8_t BOOTLOADER_MODE_TYPE      = 0x70;
 
     static const uint8_t DRAWER_STATE_CHANGE_EVENT = 0x99;
     

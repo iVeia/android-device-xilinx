@@ -51,6 +51,7 @@ static int setupFD(std::string &file) {
 DSBInterface::DSBInterface(std::string dev, unsigned int update_rate_s) {
   discoverCountdown = 0;
   tLastUpdate = 0;
+  checkCount = 0;
 
   if(update_rate_s > 0 && update_rate_s < (60 * 5))
     dsbUpdateFreq = update_rate_s;
@@ -71,6 +72,13 @@ std::unique_ptr<Message> DSBInterface::ProcessMessage(const Message &msg) {
 
   bool success = false;
   switch(msg.header.subType) {
+  case Message::DSB.SetBootLoaderMode:
+    {
+      bool mode = (msg.header.imm[0] != 0);
+      success = setBootLoaderMode(mode);
+    }
+    break;
+    
   case Message::DSB.Reset:
     {
       success = globalReset();
@@ -128,10 +136,23 @@ std::unique_ptr<Message> DSBInterface::ProcessMessage(const Message &msg) {
 
           std::string dp = std::to_string(d.position);
           for(char c : dp) payload.push_back(c);
-        } // end for over dsb.drawers
+          payload.push_back(':');
+
+          std::string dt = std::to_string(dsb.temperature);
+          for(char c : dt) payload.push_back(c);
+          payload.push_back(':');
+          
+          std::string ds = std::to_string(dsb.status_byte);
+          for(char c : ds) payload.push_back(c);
+
           payload.push_back('\0');
           numDrawers++;
+        } // end for over dsb.drawers
       } // end for over DSBs
+
+      // Send the message
+      return std::unique_ptr<Message>(new Message(Message::DSB, Message::DSB.GetDrawerStates,
+                                                  numDrawers, 0, 0, 0, payload));
     }
     break;
 
@@ -162,7 +183,7 @@ bool DSBInterface::ProcessMainLoop(SocketInterface &intf, bool send) {
 
   // First, check to see if we are awaiting on a reset discovery
   if(discoverCountdown > 0) {
-    if((tnow - discoverCountdown) >= RESET_DISCOVER_WAIT) {
+    if((tnow >= discoverCountdown)) {
       // We have passed the threshold to perform a discovery
       discover();
       discoverCountdown = 0;
@@ -204,7 +225,7 @@ bool DSBInterface::ProcessMainLoop(SocketInterface &intf, bool send) {
       }
     }
     tLastUpdate = time(nullptr);
-  } else {
+  } else if((checkCount++ % 10) == 0) {
     // If we don't have to do an update:
     // get a message (with a very small timeout) to check to see if there are any
     //  pending messages
@@ -280,9 +301,9 @@ bool DSBInterface::send(uint8_t addr, uint8_t type,
   // add CRC
   dat.push_back(0x00);
 
-  debug << "DSB sending: " << (int)addr << ":" << (int)type <<
-    ":" << (int)read << ":" << dat.size() << std::endl;
-  debug << "\t";
+  debug << "DSB sending: addr:" << (int)addr << " type:" << (int)type <<
+    " read:" << (int)read << " data:";
+  debug << " <--> ";
   for(unsigned int q = 0; q < dat.size(); q++) {
     debug << std::hex << (int)dat[q] << "," << std::dec;
   }
@@ -293,7 +314,6 @@ bool DSBInterface::send(uint8_t addr, uint8_t type,
   int count = (bcast) ? 3 : 1;
   while(count > 0) {
     int ret = write(devFD, dat.data(), dat.size());
-    debug << "DSB sent: " << ret << std::endl;
 
     if(ret < 0) {
       debug << Debug::Mode::Err << "Failed to write DSB message: " << strerror(errno) <<
@@ -308,18 +328,19 @@ bool DSBInterface::send(uint8_t addr, uint8_t type,
     usleep(delay * 1000);
   }
 
-  debug << "dsb send finished" << std::endl;
   return true;
 }
 
 bool DSBInterface::recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
                         int timeoutMS) {
-  while(true) {
+  int bcount = 0;
+
+  // If we get too many broadcasts return, so that we can process the servers and send images
+  while(bcount < 50) {
     msg.clear();
     bool ret = _recv(addr, type, msg, timeoutMS);
 
     if(ret && (addr == BROADCAST_ADDRESS)) {
-      debug << " ****** Got a broadcast" << std::endl;
       // We received a broadcast - queue it up
       if(type == DRAWER_STATE_CHANGE_EVENT) {
         if(msg.size() != 2) {
@@ -334,6 +355,8 @@ bool DSBInterface::recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
         evt.open = ( (msg[1] & 0x20) != 0);
         evt.event = ((msg[1] & 0x10) == 0); // In the message, 0 is unlock, 1 is lock
         events.push_back(evt);
+        bcount++;
+        debug << "                 * DSB Broadcast: " << (int)addr << ":" << std::hex << (int)type << ":" << (int)msg[0] << ":" << (int)msg[1] << std::dec << std::endl;
       } else {
         debug << Debug::Mode::Err << "Unknown event type: " << std::hex << (int)type <<
           std::dec << std::endl;
@@ -344,6 +367,9 @@ bool DSBInterface::recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
       return ret;
     }
   }
+
+  // If we got here we received too many broadcasts
+  return false;
 }
 
 bool DSBInterface::_recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
@@ -367,7 +393,7 @@ bool DSBInterface::_recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg
     long delta_ms = ((seconds) * 1000 + useconds/1000.0) + 0.5;
 
     if((delta_ms) > timeoutMS) {
-      debug << Debug::Mode::Info << "Timed out on DSB recv" << std::endl;
+      //debug << Debug::Mode::Info << "Timed out on DSB recv" << std::endl;
       return false;
     }
 
@@ -439,6 +465,8 @@ bool DSBInterface::discover() {
       debug << "Failed to send disable message on discover" << std::endl;
     }
   }
+
+  dsbs.clear();
   
   for(int addr = 1; addr < 14; addr++) {
     {
@@ -479,7 +507,7 @@ bool DSBInterface::discover() {
     
     // Check the address against the device type
     uint8_t dtype = rmsg[0] & 0x0F;
-    if(dtype == 1 || dtype == 3) {
+    if(dtype == 3) {
       // DSB 1 and three drawer
       if(addr >= 14 || addr <= 0) {
         debug << "DSB at wrong address: " << (int)addr << std::endl;
@@ -493,31 +521,47 @@ bool DSBInterface::discover() {
       continue;
     }
     
-    {
+    if(dtype == 3) {
       // If we are here a DSB responded at address <addr>
       DSB dsb;
+      dsb.errors = 0;
+      dsb.temperature = 0;
+      dsb.status_byte = 0;
+      dsb.factoryMode = false;
+      dsb.proxStatus = false;
+      dsb.solenoidStatus = 0;
+      dsb.gunlock = dsb.lunlock = false;
+
       dsb.address = addr;
       dsb.bootLoaderMode = ((rmsg[1] & 0x10) != 0);
       dsb.version = rmsg[3];
       uint8_t drawer_count = rmsg[1] & 0x0F;
-      dsb.start = (rmsg[2]>>4) & 0x0F;
-      dsb.end   = (rmsg[2]>>0) & 0x0F;
+      dsb.end   = (rmsg[2]>>4) & 0x0F;
+      dsb.start = (rmsg[2]>>0) & 0x0F;
+
+      debug << Debug::Mode::Debug << "DSB v." << std::hex << (int)dsb.version << std::dec << " @ " <<
+        ((dsb.bootLoaderMode)?(" *"):("  ")) << (int)dsb.address << " d: " << 
+        (int)dsb.start << " to " << (int) dsb.end <<
+        std::endl;
+        
       for(int dn = 0; dn < drawer_count; dn++) {
         DSB::drawer drawer;
+        drawer.open = false;
+        drawer.position = 0;
+        drawer.solenoidState = 0;
+        
         if(dsb.start == 15) drawer.index = 15; // This is a special "unassigned" case
         else drawer.index = dsb.start + dn;
+
+        debug << Debug::Mode::Debug << "    Drawer @ " << (int)drawer.index << std::endl;
         dsb.drawers.push_back(drawer);
       }
-      dsbs.push_back(dsb);
+
+      dsbs.push_back(dsb);      
     }
   } // Close for over each address
   
-  debug << Debug::Mode::Debug << "Discovered " << dsbs.size() << "dsbs: " << std::endl;
-  for(unsigned int i = 0; i < dsbs.size(); i++) {
-    debug << Debug::Mode::Debug << "\tAddr:" << (dsbs[i].bootLoaderMode ? "*" : " ") << (int)dsbs[i].address <<
-      " Ver: " << std::hex << (int)dsbs[i].version << std::dec <<
-      "(" << dsbs[i].drawers.size() << ")" << std::endl;
-  }
+  debug << Debug::Mode::Debug << "Discovered " << dsbs.size() << "dsbs" << std::endl;
 
   {
     std::vector<uint8_t> msg {0x07}; // allow opening, solenoids in auto mode, enable prox sensors
@@ -585,6 +629,17 @@ bool DSBInterface::updateFirmware(std::string fw_path) {
   return false;
 }
 
+bool DSBInterface::setBootLoaderMode(bool enable) {
+  uint8_t val = (enable)?(1):(0);
+  std::vector<uint8_t> msg {val};
+  if(!send(BROADCAST_ADDRESS, BOOTLOADER_MODE_TYPE, false, msg)) {
+    debug << "Failed to send bootloader mode broadcast" << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
 bool DSBInterface::globalReset() {
   // Clear everything out
   std::vector<uint8_t> msg {0x00};
@@ -594,7 +649,7 @@ bool DSBInterface::globalReset() {
   }
 
   // After waiting TBD seconds, run discover again
-  discoverCountdown = time(nullptr);
+  discoverCountdown = time(nullptr) + RESET_DISCOVER_WAIT;
 
   return true;
 }
@@ -675,6 +730,11 @@ bool DSBInterface::getDrawerStatus() {
         debug << "get status returned " << rmsg.size() << " bytes" << std::endl;
         continue;
       }
+
+      debug << "Status message: " << std::hex << (int)rmsg[0] << ":" <<
+        (int)rmsg[1] << ":" <<
+        (int)rmsg[2] << ":" <<
+        (int)rmsg[3] << std::endl;
             
       // We will be assuming the DSB reported the drawers in order
       //  TODO: For the test systems this is not always true, so the check was removed
@@ -688,6 +748,8 @@ bool DSBInterface::getDrawerStatus() {
         d.open = (((rmsg[curr]) & 0x20) != 0);
         d.position = (rmsg[curr] & 0x0F);
       } // end for over drawers
+
+      dsb.status_byte = rmsg[3];
 
       dsb.errors         = (rmsg[3]       & 0x01) != 0;
       dsb.factoryMode    = (rmsg[3]       & 0x02) != 0;

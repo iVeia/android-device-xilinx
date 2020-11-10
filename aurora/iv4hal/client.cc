@@ -56,15 +56,23 @@ int main(int argc, char ** argv) {
         uint16_t cmd, subCmd;
     } commands[] = {
         {"--init",     false, Message::Management,     Message::Management.Initialize},
+        
         {"--cimg",     true,  Message::Image,          Message::Image.CaptureImage},
         {"--gimg",     true,  Message::Image,          Message::Image.GetImage},
-        {"--ccap",     true,  Message::Image,           Message::Image.ContinuousCapture},
+        {"--ccap",     true,  Message::Image,          Message::Image.ContinuousCapture},
+        
+        {"--blm",      true,  Message::DSB,            Message::DSB.SetBootLoaderMode},
+        {"--drst",     false, Message::DSB,            Message::DSB.Reset},
+        {"--dst",      false, Message::DSB,            Message::DSB.GetDrawerStates},
 
         {0, false, 0, 0},
     };
 
     // The file to save the "GetImage" command results to
     std::string saveImgTo = "";
+
+    // Do we want to enable boot loader mode
+    bool blmSet = false;
     
     // TODO: We just queue up a bunch of images here and blast them out.  There isn't any
     //       form of interactivity.  That would be a nice feature to add
@@ -80,6 +88,17 @@ int main(int argc, char ** argv) {
 
                 if(commands[j].more) {
                   switch(commands[j].subCmd) {
+                  case Message::DSB.SetBootLoaderMode:
+                    {
+                      if(++i >= argc) {
+                        cerr << "Not enough args to set bootloader mode" << endl;
+                        return -1;
+                      }
+                      if(argv[i][0] == '0') blmSet = false;
+                      else blmSet = true;
+                    }
+                    break;
+                    
                   case Message::Image.GetImage:
                     {
                       if(++i >= argc) {
@@ -95,30 +114,31 @@ int main(int argc, char ** argv) {
                       i2 = ToInt(ImageType::UYVY); // Image type
                     }
                     break;
-                case Message::Image.ContinuousCapture:
-                  {                    
-                    if(++i >= argc) {
-                      cerr << "Not enough arguments to ContinuousCapture [on|off] [skip]" << endl;
-                      return -1;
+                    
+                  case Message::Image.ContinuousCapture:
+                    {                    
+                      if(++i >= argc) {
+                        cerr << "Not enough arguments to ContinuousCapture [on|off] [skip]" << endl;
+                        return -1;
+                      }
+                      std::string action = std::string(argv[i]);
+                      
+                      if(++i >= argc) {
+                        cerr << "Not enough arguments to ContinuousCapture [on|off] [skip]" << endl;
+                        return -1;
+                      }
+                      int skip = atoi(argv[i]);
+                      
+                      i1 = 0;
+                      i2 = ToInt(ImageType::UYVY);
+                      if(action == "on" || action == "On" || action == "1") i3 = 1;
+                      else i3 = 0;
+                      i4 = skip;
                     }
-                    std::string action = std::string(argv[i]);
-
-                    if(++i >= argc) {
-                      cerr << "Not enough arguments to ContinuousCapture [on|off] [skip]" << endl;
-                      return -1;
-                    }
-                    int skip = atoi(argv[i]);
-
-                    i1 = 0;
-                    i2 = ToInt(ImageType::UYVY);
-                    if(action == "on" || action == "On" || action == "1") i3 = 1;
-                    else i3 = 0;
-                    i4 = skip;
-                  }
-                  break;
-                  
+                    break;
+                    
                   } // end switch(subCmd)
-
+                  
                 } // end if command.more
                 
                 debug << IV4HAL_TEST_CLIENT << "pushing message: " <<
@@ -173,6 +193,7 @@ int main(int argc, char ** argv) {
           }
           
         }
+
       });
 
     int currFrame = 0;
@@ -198,11 +219,20 @@ int main(int argc, char ** argv) {
             pDat += toWrite;
           }
           debug << Debug::Mode::Info << "Wrote an image to " << name << std::endl;
+          
+          if((++currFrame % 50) == 0) {
+            time(&nowt);
+            cout << currFrame << " frames in " << (nowt - thent) << " seconds" << std::endl;
+            cout << (double)currFrame / (double)(nowt - thent) << " fps" << std::endl;
+          }
         }
-        if((++currFrame % 50) == 0) {
-          time(&nowt);
-          cout << currFrame << " frames in " << (nowt - thent) << " seconds" << std::endl;
-          cout << (double)currFrame / (double)(nowt - thent) << " fps" << std::endl;
+
+        else if(message.header.subType == Message::DSB.DrawerStateChanged) {
+          debug << "    Drawer State Changed Event" << std::endl;
+        }
+
+        else if(message.header.subType == Message::DSB.DrawerErrors) {
+          debug << "    Drawer Error Event" << std::endl;
         }
         
       }, false, IV4HAL_EVENT_SOCK_NAME);

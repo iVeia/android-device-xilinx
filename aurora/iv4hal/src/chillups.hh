@@ -52,6 +52,14 @@ namespace iv4 {
 
     // All the functions to get and set status
 
+    // Keep track of the last time we sent status messages so that we can send them periodically
+    static const time_t StatusMessageFreq = 5; // Send status messages every 5 seconds
+    time_t lastTORMessage; // The last timne we sent a temp out of range message
+    time_t lastBSMessage;  // The last time we sent a Battery state message
+    time_t lastACMessage;  // The last time we sent an AC message
+    time_t lastCEMessge;   // The last time we sent a compressor error message
+
+    
     // Read from the main status register (i2c:0x60)
     class cupsStatus {
     public:
@@ -181,6 +189,7 @@ namespace iv4 {
     };
     chillups_id readColdCubeID();  // 0x1A
     chillups_id readAmbientID();   // 0x23
+    std::string IdToString(chillups_id);
 
     struct board_config {
       uint8_t id;      // Board id

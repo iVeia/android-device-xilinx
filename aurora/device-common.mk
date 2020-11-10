@@ -56,6 +56,8 @@ PRODUCT_COPY_FILES += \
 	device/xilinx/aurora/iv4hal/config/basler_14MP.playback:system/etc/basler_14MP.playback \
 	device/xilinx/aurora/iv4hal/config/basler_5MP.playback:system/etc/basler_5MP.playback
 
+PRODUCT_PACKAGES += pdsb
+
 
 ## OTA stuff -- disable until we get more stuff working
 #PRODUCT_PACKAGES += iVeiOTA ciVeiOTA iecho ciecho

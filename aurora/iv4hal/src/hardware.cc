@@ -74,6 +74,7 @@ namespace iv4 {
   }
   
   bool SetPot(std::string dev, uint8_t addr, uint8_t val) {
+    debug << "Setting pot to " << std::hex << (int)val << std::dec << std::endl;
     return i2c_write(dev, addr, val);
   }
 
