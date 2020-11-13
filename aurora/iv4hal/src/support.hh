@@ -19,6 +19,8 @@ namespace iv4 {
   
   //TODO: Consider replacing these with returns of unique_ptr if copying becomes too much
   std::vector<std::string> Split(std::string str, std::string delims);
+
+  uint8_t CalcCRC(const std::vector<uint8_t> &dat);
   
   std::map<std::string,std::string> ToDictionary(std::string param);  
 } // end namespace iv4;

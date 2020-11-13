@@ -71,7 +71,7 @@ namespace iv4 {
     uint64_t totalWritten = 0;
     bool copyAll = (len == 0);
     try {
-     debug << Debug::Mode::Debug << "Copying from " << src << " to " << dest << std::endl;
+      debug << Debug::Mode::Debug << "Copying from " << src << " to " << dest << std::endl;
       // TODO: This seems too easy.  Go back and double check all this
       int inf = open(src.c_str(), O_RDONLY);
       int otf = open(dest.c_str(), O_WRONLY);
@@ -195,45 +195,89 @@ namespace iv4 {
   //TODO: Consider replacing these with returns of unique_ptr if copying becomes too much
   std::vector<std::string> Split(std::string str, std::string delims) {
     std::vector<std::string> ret;
-        unsigned long start = 0, end = 0;
-        unsigned long len = str.length();
+    unsigned long start = 0, end = 0;
+    unsigned long len = str.length();
         
-        while(start < len) {
-          start = str.find_first_not_of(delims, start);
-          if(start == std::string::npos) break;
+    while(start < len) {
+      start = str.find_first_not_of(delims, start);
+      if(start == std::string::npos) break;
           
-          end = str.find_first_of(delims, start + 1);
-          if(end == std::string::npos) end = str.length();
+      end = str.find_first_of(delims, start + 1);
+      if(end == std::string::npos) end = str.length();
           
-          // Everything between the two is a token
-          ret.push_back(str.substr(start, end-start));
+      // Everything between the two is a token
+      ret.push_back(str.substr(start, end-start));
           
-          // Then start looking for the next token
-          start = end + 1;
-        }
+      // Then start looking for the next token
+      start = end + 1;
+    }
         
-        return ret;
+    return ret;
+  }
+
+  std::map<std::string,std::string> ToDictionary(std::string param) {
+    std::map<std::string, std::string> ret;
+
+    // First, split the string by whitespace and iterate over each token
+    std::vector<std::string> toks = Split(param, " \t\r\n");
+    for(const auto& tok : toks) {
+      // Try to extract a key=value from each token
+      std::vector<std::string> elems = Split(tok, "=");
+
+      // Store off the key/value pairs int a dictionary
+      if(elems.size() == 0) {/* error */}
+      else if(elems.size() == 1) ret[elems[0]] = "";
+      else if(elems.size() == 2) ret[elems[0]] = elems[1];
+      else if(elems.size() > 2) {
+        // This may be an error?
+        ret[elems[0]] = elems[1];
+      }
     }
 
-    std::map<std::string,std::string> ToDictionary(std::string param) {
-        std::map<std::string, std::string> ret;
+    return ret;
+  }
 
-        // First, split the string by whitespace and iterate over each token
-        std::vector<std::string> toks = Split(param, " \t\r\n");
-        for(const auto& tok : toks) {
-            // Try to extract a key=value from each token
-            std::vector<std::string> elems = Split(tok, "=");
+  uint8_t CalcCRC(const std::vector<uint8_t> &dat) {
+    int len = dat.size();
 
-            // Store off the key/value pairs int a dictionary
-            if(elems.size() == 0) {/* error */}
-            else if(elems.size() == 1) ret[elems[0]] = "";
-            else if(elems.size() == 2) ret[elems[0]] = elems[1];
-            else if(elems.size() > 2) {
-                // This may be an error?
-                ret[elems[0]] = elems[1];
-            }
+    uint8_t crc = 0;
+  
+    for (int i = 0; i < len; i++) {
+      //get a byte to work with
+      uint8_t byte = dat[i];
+    
+      //roll over its bits making CRC magic
+      for (int bit = 0; bit < 8; bit++) {
+        uint8_t mix = (crc ^ byte) & 0x01;
+        crc >>= 1;
+        if(mix) {
+          crc ^= 0x8C;
         }
-
-        return ret;
+      
+        byte >>= 1;
+      }
     }
+  
+    return crc;
+  }
+
+  char GetNibbleChar(uint8_t u) {
+    if(u >= 0 && u <= 9) return u + '0';
+    else if(u >= 0x0A && u <= 0x0F) return u + 'A';
+    else return 'X';
+  }
+  
+  uint8_t GetNibble(char c) {
+    if(c >= '0' && c <= '9') return (c - '0');
+    switch(c) {
+    case 'a': case 'A': return 0x0A;
+    case 'b': case 'B': return 0x0B;
+    case 'c': case 'C': return 0x0C;
+    case 'd': case 'D': return 0x0D;
+    case 'e': case 'E': return 0x0E;
+    case 'f': case 'F': return 0x0F;
+    default: return 0xF0;
+    }
+  }
+
 };

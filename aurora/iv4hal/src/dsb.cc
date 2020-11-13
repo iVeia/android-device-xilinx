@@ -6,6 +6,7 @@
 
 #include "debug.hh"
 #include "dsb.hh"
+#include "support.hh"
 
 using namespace iv4;
 
@@ -88,7 +89,17 @@ std::unique_ptr<Message> DSBInterface::ProcessMessage(const Message &msg) {
   case Message::DSB.SetGlobalLock:
     {
       globalLockState = (msg.header.imm[0] != 0);
-      success = setGlobalLockState(globalLockState);
+      solenoidManualState = (msg.header.imm[1] != 0);
+      debug << "Set global lock: " << globalLockState << ":" << solenoidManualState << std::endl;
+      success = setGlobalLockState(globalLockState, solenoidManualState);
+    }
+    break;
+
+  case Message::DSB.DrawerOverride:
+    {
+      uint8_t index = msg.header.imm[0] & 0x1F;
+      bool lock = msg.header.imm[1] != 1;
+      success = drawerOverride(index, lock);
     }
     break;
 
@@ -108,11 +119,19 @@ std::unique_ptr<Message> DSBInterface::ProcessMessage(const Message &msg) {
   case Message::DSB.AssignDrawerIndex:
     {
       uint8_t ndx = static_cast<uint8_t>(msg.header.imm[0]);
-      if(ndx > 13 || ndx < 1) {
+      if(ndx >= 14 || ndx <= 0) {
         return Message::MakeNACK(msg, 0, "Invalid index");
       }
       
       success = assignDrawerIndex(ndx);
+    }
+    break;
+
+  case Message::DSB.DrawerRecalibration:
+    {
+      bool save = (msg.header.imm[0] == 1);
+      debug << "Drawer recalibration message: " << save << std::endl;
+      success = drawerRecalibration(save);
     }
     break;
 
@@ -156,13 +175,23 @@ std::unique_ptr<Message> DSBInterface::ProcessMessage(const Message &msg) {
     }
     break;
 
-  case Message::DSB.UpdateFirmware:
+  case Message::DSB.GetDebugData:
     {
-      std::string path(msg.payload.begin(), msg.payload.end());
-      success = updateFirmware(path);
+      uint8_t dsb_index = msg.header.imm[0] & 0x1F;
+
+      std::string resp = "";
+      std::vector<uint8_t> payload;
+      if(getDebugData(dsb_index, resp)) {
+        for(char c : resp) payload.push_back(c);
+        return std::unique_ptr<Message>(new Message(Message::DSB, Message::DSB.GetDebugData,
+                                                    dsb_index, 0, 0, 0, payload));
+      } else {
+        debug << "Bad response to debug request: " << (int)dsb_index << ":" << std::endl;
+      }
     }
     break;
 
+   // -------------------------- End DSB messages -------------------------
   default:
     return Message::MakeNACK(msg, 0, "Unknown DSB message");
   }
@@ -289,17 +318,18 @@ bool DSBInterface::send(uint8_t addr, uint8_t type,
   switch(msg_size) {
   case 1: break;
   case 2: start |= 0x20; break;
-  case 3: start |= 0x40; dat.push_back(0x00); break;
   case 4: start |= 0x40; break;
+  case 8: start |= 0x30; break;
   default:
     debug << Debug::Mode::Err << "Tried to call send with data of size " << dat.size() << std::endl;
     return false;
   }
   dat.insert(dat.begin(), start);
 
-
   // add CRC
-  dat.push_back(0x00);
+  uint8_t crc = CalcCRC(dat);
+  if(enableCRC) dat.push_back(crc);
+  else          dat.push_back(0x00);
 
   debug << "DSB sending: addr:" << (int)addr << " type:" << (int)type <<
     " read:" << (int)read << " data:";
@@ -349,14 +379,15 @@ bool DSBInterface::recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
         }
         // This is a drawer event
         DrawerEvent evt;
-        evt.index = msg[0] & 0x0F;
+        evt.index = msg[0] & 0x1F;
         evt.solenoid = (msg[1] >> 6) & 0x03;
         evt.position = (msg[1] & 0x0F);
         evt.open = ( (msg[1] & 0x20) != 0);
         evt.event = ((msg[1] & 0x10) == 0); // In the message, 0 is unlock, 1 is lock
         events.push_back(evt);
         bcount++;
-        debug << "                 * DSB Broadcast: " << (int)addr << ":" << std::hex << (int)type << ":" << (int)msg[0] << ":" << (int)msg[1] << std::dec << std::endl;
+        debug << "         ********* DSB Broadcast: " << (int)addr <<
+          ":" << std::hex << (int)type << ":" << (int)msg[0] << ":" << (int)msg[1] << std::dec << std::endl;
       } else {
         debug << Debug::Mode::Err << "Unknown event type: " << std::hex << (int)type <<
           std::dec << std::endl;
@@ -378,8 +409,9 @@ bool DSBInterface::_recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg
   int avail = 0;
   int state = 0;
   uint8_t len = -1;
-  uint8_t crc = -1;
   struct timeval start;
+  std::vector<uint8_t> allMsg;
+  
   gettimeofday(&start, nullptr);
   // These messages are short so just read them one byte at a time to make the state machine easier
   //  If this is a bottleneck we can redo it later
@@ -409,35 +441,49 @@ bool DSBInterface::_recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg
         strerror(errno) << std::endl;
       return false;
     }
-
+    
     // We have data available, so read a byte and process it
     else if(avail > 0) {
+      debug << "RS-485 bytes available: " << avail << std::endl;
     
       uint8_t byte;
       read(devFD, &byte, 1);
       switch(state) {
       case 0: // This is the header
         if(byte == 0) continue; // Skip all leading zero bytes
+        allMsg.push_back(byte);
         addr = byte & 0x1F;
         len = (byte >> 5) & 0x03;
+        if(len == 0) len = 1;
+        else if(len == 1) len = 2;
+        else if(len == 2) len = 4;
+        else if(len == 3) len = 8;
         state++;
         break;
       case 1: // The type byte
         type = byte;
+        allMsg.push_back(byte);
         state++;
         break;
       case 2: // Payload
         msg.push_back(byte);
-        if((len  < 2 && (msg.size() == (len+1))) ||
-           (len == 2 && (msg.size() == 4)))
-          state++;             
+        allMsg.push_back(byte);
+        if(--len == 0) state++;             
         break;
       case 3: // CRC
-        crc = byte;
-        debug << "MSG: " << std::hex << (int)addr << ":" <<  (int)len << ":" <<  (int)type << ":";
-        for(unsigned int i = 0; i < msg.size(); i++) debug <<  (int)msg[i] << ":";
-        debug <<  (int)crc << std::dec << std::endl;
-        done = true;
+        {
+          uint8_t crc = CalcCRC(allMsg);
+          if(crc != byte) {
+            debug << Debug::Mode::Failure << " === *** CRC Failed: " <<
+              std::hex << (int)crc << " != " << (int)byte << std::dec << std::endl;
+            return false;
+          }          
+          
+          debug << "MSG: " << std::hex << (int)addr << ":" <<  (int)len << ":" <<  (int)type << ":";
+          for(unsigned int i = 0; i < msg.size(); i++) debug <<  (int)msg[i] << ":";
+          debug <<  (int)crc << std::dec << std::endl;
+          done = true;
+        }
         break;
       default:
         // This is an error -- bad message
@@ -472,7 +518,7 @@ bool DSBInterface::discover() {
     {
     // Request info from  the address
       std::vector<uint8_t> msg {0x00};
-      if(!send(addr, 0x01, true, msg)) {
+      if(!send(addr, DISCOVERY_TYPE, true, msg)) {
         debug << "Failed to send read message to addr: " << addr << std::endl;
         continue;
       }
@@ -493,14 +539,14 @@ bool DSBInterface::discover() {
     }
     
     // Make sure the message is the correct size
-    if(rmsg.size() != 4) {
+    if(rmsg.size() != 8) {
       debug << "Message size wrong: " << rmsg.size() << std::endl;
       continue;
     }
     
     // Make sure this is a discovery response
-    if(rtype != 0x81) {
-      debug << Debug::Mode::Info << "Discovery read is not correct message type: " <<
+    if(rtype != DISCOVERY_RETURN) {
+      debug << Debug::Mode::Info << "Discovery return is not correct message type: " <<
         std::hex << (int)rtype << std::dec << std::endl;
       continue;
     }
@@ -508,7 +554,7 @@ bool DSBInterface::discover() {
     // Check the address against the device type
     uint8_t dtype = rmsg[0] & 0x0F;
     if(dtype == 3) {
-      // DSB 1 and three drawer
+      // DSB one and three drawer
       if(addr >= 14 || addr <= 0) {
         debug << "DSB at wrong address: " << (int)addr << std::endl;
         continue;
@@ -531,28 +577,33 @@ bool DSBInterface::discover() {
       dsb.proxStatus = false;
       dsb.solenoidStatus = 0;
       dsb.gunlock = dsb.lunlock = false;
+      dsb.proxState = 0xFF;
 
       dsb.address = addr;
       dsb.bootLoaderMode = ((rmsg[1] & 0x10) != 0);
-      dsb.version = rmsg[3];
-      uint8_t drawer_count = rmsg[1] & 0x0F;
-      dsb.end   = (rmsg[2]>>4) & 0x0F;
-      dsb.start = (rmsg[2]>>0) & 0x0F;
+      dsb.version = rmsg[7];
+
+      //uint8_t drawer_count = rmsg[1] & 0x0F;
 
       debug << Debug::Mode::Debug << "DSB v." << std::hex << (int)dsb.version << std::dec << " @ " <<
-        ((dsb.bootLoaderMode)?(" *"):("  ")) << (int)dsb.address << " d: " << 
-        (int)dsb.start << " to " << (int) dsb.end <<
+        ((dsb.bootLoaderMode)?(" *"):("  ")) << (int)dsb.address <<
         std::endl;
+
+      // TODO: At the moment we have a 3 drawer max.  This may change
+      //  The reason I don't use drawer count here is because the index
+      //  may be in the middle of the response
+      for(int dn = 0; dn < 3; dn++) {
+        uint8_t drawer_ndx = (rmsg[dn + 2] & 0x1F);
+
+        // Check for an unassigned drawer first
+        if(drawer_ndx <= 0 || drawer_ndx >= 0x1F) continue;
         
-      for(int dn = 0; dn < drawer_count; dn++) {
         DSB::drawer drawer;
         drawer.open = false;
         drawer.position = 0;
         drawer.solenoidState = 0;
+        drawer.index = drawer_ndx;
         
-        if(dsb.start == 15) drawer.index = 15; // This is a special "unassigned" case
-        else drawer.index = dsb.start + dn;
-
         debug << Debug::Mode::Debug << "    Drawer @ " << (int)drawer.index << std::endl;
         dsb.drawers.push_back(drawer);
       }
@@ -571,12 +622,41 @@ bool DSBInterface::discover() {
   }
   
   return true;
+}
+
+bool DSBInterface::drawerRecalibration(bool save) {
+  uint8_t val = (save) ? (0x02) : (0x01);
+  std::vector<uint8_t> msg {val};
+  if(!send(BROADCAST_ADDRESS, DRAWER_RECALIBRATION_TYPE, false,  msg)) {
+    debug << "Failed to send drawer recalibration " << save << " message" << std::endl;
+    return false;
   }
 
-bool DSBInterface::setGlobalLockState(bool state) {
-  uint8_t val = (state) ? (0x06) : (0x07);
+  debug << "Sent recalibration message" << std::endl;
+
+  return true;
+}
+
+bool DSBInterface::drawerOverride(uint8_t index, bool lock) {
+  uint8_t val = index & 0x1F;
+  if(!lock) val |= 0x20;
   std::vector<uint8_t> msg {val};
-  if(!send(BROADCAST_ADDRESS, 0x02, false, msg)) {
+  if(!send(BROADCAST_ADDRESS, DRAWER_OVERRIDE_TYPE, false, msg)) {
+    debug << "Failed to send drawer override command" << std::endl;
+    return false;
+  }
+  
+  return true;
+}
+
+bool DSBInterface::setGlobalLockState(bool state, bool manual) {
+  uint8_t val = (state) ? (0x02) : (0x03);
+  
+  if(manual) val |= 0x08; // Manual mode
+  else val |= 0x04;    // auto mode
+  
+  std::vector<uint8_t> msg {val};
+  if(!send(BROADCAST_ADDRESS, GLOBAL_LOCK_TYPE, false, msg)) {
     debug << "Failed to send set global lock broadcast" << std::endl;
     return false;
   }
@@ -599,11 +679,101 @@ bool DSBInterface::setFactoryMode(bool state) {
   return true;
 }
 
+bool DSBInterface::getDebugData(uint8_t dsb_index, std::string &ret) {
+  if(dsb_index >= dsbs.size()) {
+    debug << "Index is " << (int)dsb_index << " max is " << dsbs.size() << std::endl;
+    return false;
+  }
+  
+  uint8_t addr = dsbs[dsb_index].address;
+
+  debug << "Getting debug data" << std::endl;
+
+  struct dats {
+    std::string name;
+    uint8_t dat;
+  };
+  dats requests[] = {
+    //{"rx_timeout", 1},
+    //{"tx_timeout", 2},
+    //{"crc_errors", 3},
+    //{"framing_errors", 4},
+
+    {"Sensor0_OSC_offset",  6},
+    {"Sensor0_OSC_value",   9},
+    {"Sensor0_OSC_adj",    12},
+    {"Sensor0_DAC_value",  15},
+    {"\n",                251},
+    {"Sensor1_OSC_offset",  7},
+    {"Sensor1_OSC_value",  10},
+    {"Sensor1_OSC_adj",    13},
+    {"Sensor1_DAC_value",  16},
+    {"\n",                251},
+    {"Sensor2_OSC_offset",  8},
+    {"Sensor2_OSC_value",  11},    
+    {"Sensor2_OSC_adj",    14},
+    {"Sensor2_DAC_value",  17},
+  };
+     
+  ret = "";
+  for(auto dat : requests) {
+    if(dat.dat == 251) {
+      ret += dat.name;
+      continue;
+    }
+    
+    std::vector<uint8_t> msg {dat.dat};
+    if(!send(addr, GET_DEBUG_TYPE, true, msg)) {
+      debug << "Failed to send get debug message" << std::endl;
+      return false;
+    }
+    
+    // Get the message back
+    {
+      std::vector<uint8_t> rmsg;
+      uint8_t raddr, rtype;
+      if(!recv(raddr, rtype, rmsg)) {
+        debug << "Read from " << (int)addr << " timed out" << std::endl;
+        return false;
+      }
+      
+      if(rtype != GET_DEBUG_RETURN) {
+        debug << "incorrect return type: " << std::hex << (int)rtype << " != " << (int)GET_DEBUG_RETURN <<
+          std::dec << std::endl;
+        return false;
+      }
+      
+      if(rmsg.size() != 8) {
+        debug << "debug response wrong size: " << rmsg.size() << std::endl;
+        return false;
+      }
+      
+      if(rmsg[0] != dat.dat) {
+        debug << "debug response data type incorrect: " << std::hex << (int)rmsg[0] << " != " <<
+          (int)dat.dat << std::dec << std::endl;
+        return false;        
+      }
+
+      int32_t rval =
+        ((rmsg[4] << 24) & 0xFF000000) |
+        ((rmsg[5] << 16) & 0x00FF0000) |
+        ((rmsg[6] <<  8) & 0x0000FF00) |
+        ((rmsg[7]      ) & 0x000000FF);
+
+      if(ret != "" && ret[ret.length()-1] != '\n') ret += "      ";
+      ret += dat.name + " = " + std::to_string(rval);
+    }
+  }
+
+  debug << "Debug return: " << ret << std::endl;
+  return true;
+}
+
 bool DSBInterface::clearDrawerIndices() {
   // LS4 issues a global lock, global solenoid disable, and global proximity disable to all DSB nodes
   //   to ensure they do not report MT99 (on drawer change) during discovery
   std::vector<uint8_t> msg {0x00};
-  if(!send(BROADCAST_ADDRESS, 0x21, false, msg)) {
+  if(!send(BROADCAST_ADDRESS, CLEAR_INDICES_TYPE, false, msg)) {
     debug << "Failed to send clear indices broadcast" << std::endl;
     return false;
   }
@@ -612,21 +782,17 @@ bool DSBInterface::clearDrawerIndices() {
 }
 
 bool DSBInterface::assignDrawerIndex(uint8_t index) {
-  if(index < 0 || index > 13) return false;
+  if(index <= 0 || index > 0x1F) return false;
 
   // Send the index value
-  uint8_t val = index & 0x0F;
+  uint8_t val = index & 0x1F;
   std::vector<uint8_t> msg {val};
-  if(!send(BROADCAST_ADDRESS, 0x22, false, msg)) {
+  if(!send(BROADCAST_ADDRESS, ASSIGN_INDEX_TYPE, false, msg)) {
     debug << "Failed to send set index broadcast" << std::endl;
     return false;
   }
 
   return true;
-}
-
-bool DSBInterface::updateFirmware(std::string fw_path) {
-  return false;
 }
 
 bool DSBInterface::setBootLoaderMode(bool enable) {
@@ -726,37 +892,61 @@ bool DSBInterface::getDrawerStatus() {
         continue;
       }
 
-      if(rmsg.size() != 4) {
+      if(rmsg.size() != 8) {
         debug << "get status returned " << rmsg.size() << " bytes" << std::endl;
         continue;
       }
 
-      debug << "Status message: " << std::hex << (int)rmsg[0] << ":" <<
+      debug << "Status message: " <<
+        std::hex <<
+        (int)rmsg[0] << ":" <<
         (int)rmsg[1] << ":" <<
         (int)rmsg[2] << ":" <<
-        (int)rmsg[3] << std::endl;
-            
-      // We will be assuming the DSB reported the drawers in order
-      //  TODO: For the test systems this is not always true, so the check was removed
-      //        add it back in for better testing if needed
-      // For each drawer in dsb.drawers      
-      for(unsigned int curr = 0; curr < dsb.drawers.size(); curr++) {
-        // Get the drawer
+        (int)rmsg[3] << ":" <<
+        (int)rmsg[4] << ":" <<
+        (int)rmsg[5] << ":" <<
+        (int)rmsg[6] << ":" <<        
+        (int)rmsg[7] <<
+        std::dec << std::endl;
+      
+      for(unsigned int curr = 0; curr < dsb.drawers.size(); curr++) {        
         DSB::drawer &d = dsb.drawers[curr];
-        // and set the status
-        d.solenoidState = (rmsg[curr] >> 6) & 0x03;
-        d.open = (((rmsg[curr]) & 0x20) != 0);
-        d.position = (rmsg[curr] & 0x0F);
+
+        // Find the drawer in the repsonse
+        bool found = false;
+        for(int im = 0; im < 3; im++) {
+          uint8_t which = 2*im;
+          uint8_t ndxm = rmsg[which] & 0x1F;
+          if(d.index == ndxm) {
+            found = true;
+            d.solenoidState = (rmsg[which+1] >> 6) & 0x03;
+            d.open = (((rmsg[which+1]) & 0x20) != 0);
+            d.position = (rmsg[which+1] & 0x0F);
+            debug << "      @ " << (int)d.index << ":" << (int) d.solenoidState << ":" <<
+              (int)d.open << ":" << (int)d.position << std::endl;
+          }
+        } // end for over response
+        if(!found) {
+          debug << Debug::Mode::Err << "Did not find drawer " << (int)d.index << " in MT83 repsonse" << std::endl;
+        }
       } // end for over drawers
 
-      dsb.status_byte = rmsg[3];
+      dsb.status_byte = rmsg[7];
 
-      dsb.errors         = (rmsg[3]       & 0x01) != 0;
-      dsb.factoryMode    = (rmsg[3]       & 0x02) != 0;
-      dsb.proxStatus     = (rmsg[3]       & 0x04) != 0;
-      dsb.solenoidStatus = (rmsg[3] >> 3) & 0x03;
-      dsb.gunlock        = (rmsg[3]       & 0x40) != 0;
-      dsb.lunlock        = (rmsg[3]       & 0x80) != 0;
+      dsb.errors         = (rmsg[7]       & 0x01) != 0;
+      dsb.factoryMode    = (rmsg[7]       & 0x02) != 0;
+      dsb.proxStatus     = (rmsg[7]       & 0x04) != 0;
+      dsb.solenoidStatus = (rmsg[7] >> 3) & 0x03;
+      dsb.gunlock        = (rmsg[7]       & 0x40) != 0;
+      dsb.lunlock        = (rmsg[7]       & 0x80) != 0;
+
+      debug << "DSB status -- " << 
+        (int)dsb.errors          << ":" <<
+        (int)dsb.factoryMode     << ":" <<
+        (int)dsb.proxStatus      << ":" <<
+        (int)dsb.solenoidStatus  << ":" <<
+        (int)dsb.gunlock         << ":" <<
+        (int)dsb.lunlock         << std::endl;
 
     } // end receive message scope
   } // end for over DSBs

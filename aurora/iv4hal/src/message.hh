@@ -251,8 +251,15 @@ namespace iv4 {
       //! Set global lock
       /*!
         imm[0] : Lock state.  0 => Off, anything else is on
+        imm[1] : Solenoid state. 0 => Auto, anything else is manual
       */      
       constexpr static uint8_t SetGlobalLock       = 0x12;
+      //! Drawer override
+      /*!
+        imm[0] : Index of drawer
+        imm[1] : 1 - Unlock, Lock otherwise
+      */
+      constexpr static uint8_t DrawerOverride      = 0x13;
       //! Set factory mode
       /*!
         imm[0] : Factory mode state
@@ -265,6 +272,11 @@ namespace iv4 {
         imm[0] : Index
       */
       constexpr static uint8_t AssignDrawerIndex   = 0x17;
+      //! Request calibration
+      /*!
+        imm[0] : 1 - Save, Anything else - don't save
+      */
+      constexpr static uint8_t DrawerRecalibration = 0x1A;
       //! Get drawer states
       /*!
         from client: no parameters
@@ -293,11 +305,16 @@ namespace iv4 {
         imm[3] : position (as per get drawer state)
       */
       constexpr static uint8_t DrawerStateChanged = 0x22;
-      //! Update DSB firmware
+      //! Get debug data from DSB
       /*!
-        payload: string to firmware path
+        imm[0] : Index of DSB to get data from
+                  They will be indexed into the DSB array - not the address or drawer index
+        
+        payload: String of collected debug values
       */
-      constexpr static uint8_t UpdateFirmware     = 0x60;
+      constexpr static uint8_t GetDebugData       = 0x70;
+      //! Get debug data -- TODO
+      constexpr static uint8_t GetDebugDataRaw    = 0x7C;
       //! Errors were recorded by a drawer
       /*!
         Sent from the server as an event when an error is detected
@@ -313,13 +330,14 @@ namespace iv4 {
         case SetBootLoaderMode  : return "DSB::SetBootLoaderMode";
         case Reset              : return "DSB::Reset";
         case SetGlobalLock      : return "DSB::SetGlobalLock";
+        case DrawerOverride     : return "DSB::DrawerOverride";
         case SetFactoryMode     : return "DSB::SetFactoryMode";
         case ClearDrawerIndices : return "DSB::ClearDrawerIndices";
         case AssignDrawerIndex  : return "DSB::AssignDrawerIndex";
+        case DrawerRecalibration: return "DSB::DrawerRecalibration";
         case GetDrawerStates    : return "DSB::GetDrawerStates";
         case DrawerStateChanged : return "DSB::DrawerStateChanged";
-        case DrawerErrors       : return "DSB::DrawerErrors";
-        case UpdateFirmware     : return "DSB::UpdateFirmware";
+        case GetDebugData       : return "DSB::GetDebugData";
         default                 : return "DSB::Invalid";
         }
       }

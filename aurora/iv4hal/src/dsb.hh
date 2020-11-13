@@ -26,6 +26,7 @@ namespace iv4 {
 
   protected:
     int checkCount;
+    bool enableCRC; // Send CRCs and check on receipt
     
     std::string _dev;
     int devFD;
@@ -39,21 +40,19 @@ namespace iv4 {
     // Class to store information on a single drawer sensor board
     struct DSB {
       uint8_t address;
-      uint8_t start;    // The first and last drawer index for this dsb
-      uint8_t end;      // These are really a function of the address
-                        //  but the dummy dsb doesn't work that way
       uint8_t version;     // major.minor (both are nibbles)
       
       bool bootLoaderMode;
       char temperature; // signed 8-bit temp
 
       uint8_t status_byte;
-      bool errors;
-      bool factoryMode;
-      bool proxStatus;
-      uint8_t solenoidStatus;
-      bool gunlock;
-      bool lunlock;
+      bool    errors;
+      bool    factoryMode;
+      bool    proxStatus;
+      uint8_t solenoidStatus;   
+      bool    gunlock;          // Global unlock status
+      bool    lunlock;          // Local unlock status
+      uint8_t proxState;
       struct drawer {
         uint8_t index;          // drawer index
         uint8_t solenoidState;  // State of the locking solenoid
@@ -64,22 +63,25 @@ namespace iv4 {
     };
     std::vector<DSB> dsbs;
     bool discover();
+    bool drawerOverride(uint8_t index, bool lock);
+
+    bool drawerRecalibration(bool save);
 
     bool setBootLoaderMode(bool enable);
     
     bool globalLockState;
-    bool setGlobalLockState(bool state);
+    bool solenoidManualState;
+    bool setGlobalLockState(bool state, bool solManual);
+    
     bool globalReset();
 
     bool factoryModeState;
     bool setFactoryMode(bool state);
+    bool getDebugData(uint8_t dsb_index, std::string &ret);
 
     bool clearDrawerIndices();
     bool assignDrawerIndex(uint8_t index);
 
-    // TODO: I think this should be part of OTA?
-    bool updateFirmware(std::string fw_path);
-    
     bool getDrawerStatus();
     bool getDrawerTemps();
     bool getErrors(DSB &dsb, std::vector<uint8_t> &errors);
@@ -103,9 +105,12 @@ namespace iv4 {
     
   private:
     static const uint8_t BROADCAST_ADDRESS         = 31;
-                                                   
+
+    static const uint8_t DISCOVERY_TYPE            = 0x01;
+    static const uint8_t DISCOVERY_RETURN          = 0x81;
+
     static const uint8_t GLOBAL_LOCK_TYPE          = 0x02;
-                                                   
+
     static const uint8_t GET_STATUS_TYPE           = 0x03;
     static const uint8_t GET_STATUS_RETURN         = 0x83;
                                                    
@@ -116,9 +121,18 @@ namespace iv4 {
     static const uint8_t GET_ERRORS_RETURN         = 0x85;
                                                    
     static const uint8_t GLOBAL_RESET_TYPE         = 0x06;
-                                                   
+
+    static const uint8_t DRAWER_RECALIBRATION_TYPE = 0x07;
+
+    static const uint8_t DRAWER_OVERRIDE_TYPE      = 0x08;
+    
     static const uint8_t FACTORY_MODE_TYPE         = 0x20;
-                                                   
+    static const uint8_t CLEAR_INDICES_TYPE        = 0x21;
+    static const uint8_t ASSIGN_INDEX_TYPE         = 0x22;
+
+    static const uint8_t GET_DEBUG_TYPE            = 0x51;
+    static const uint8_t GET_DEBUG_RETURN          = 0xD1;
+    
     static const uint8_t BOOTLOADER_MODE_TYPE      = 0x70;
 
     static const uint8_t DRAWER_STATE_CHANGE_EVENT = 0x99;
