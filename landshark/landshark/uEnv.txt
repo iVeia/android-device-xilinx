@@ -1,0 +1,3 @@
+
+sdboot=fatload mmc 0 $loadbootenv_addr boot.scr && source $loadbootenv_addr
+

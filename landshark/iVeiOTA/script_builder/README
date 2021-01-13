@@ -1,0 +1,6 @@
+This folder demonstrates how to create a self-executing script that can be run by the OTA server
+
+TODO: Documentation...  As always
+
+At the moment the Makefile shows how to put the package together,
+and the scripts are fairly self explanatory

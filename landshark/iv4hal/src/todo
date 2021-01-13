@@ -1,0 +1,9 @@
+Finish implementation of drawer recalibration message
+
+Change parser to add 8-byte messages
+
+Fix all messages to use 5-bit index
+
+Finish implementation of Get Debug Data message
+
+change MT81 (discovery response) 

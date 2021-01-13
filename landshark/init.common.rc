@@ -1,0 +1,203 @@
+import init.${ro.hardware}.usb.rc
+
+on init
+    # mount debugfs
+    mount debugfs /sys/kernel/debug /sys/kernel/debug mode=755
+
+on fs
+   mount_all /fstab.landshark
+   setprop ro.crypto.fuse_sdcard false
+
+#on fs && property:ro.boot.container=a
+#    mount_all /fstab.zcu102.a
+#    setprop ro.crypto.fuse_sdcard false
+#
+#on fs && property:ro.boot.container=b
+#    mount_all /fstab.zcu102.b
+#    setprop ro.crypto.fuse_sdcard false
+#
+#on fs && property:ro.boot.container=noota
+#    mount_all /fstab.zcu102.noota
+#    setprop ro.crypto.fuse_sdcard false
+#
+#on post-fs-data
+#    mkdir /data/media 0770 media_rw media_rw
+#    insmod /system/vendor/modules/brcmutil.ko
+#    insmod /system/vendor/modules/brcmfmac.ko
+
+on post-fs
+    # For legacy support
+    # See storage config details at http://source.android.com/tech/storage/
+    # since /storage is mounted on post-fs in init.rc
+    symlink /sdcard /storage/sdcard0
+
+    ## Create the directories used by the Wireless subsystem
+    #mkdir /data/misc/wifi 0770 wifi wifi
+    #mkdir /data/misc/wifi/sockets 0770 wifi wifi
+    #mkdir /data/misc/wifi/wpa_supplicant 0770 wifi wifi
+    mkdir /data/misc/dhcp 0770 dhcp dhcp
+    chown dhcp dhcp /data/misc/dhcp
+
+    # fake some battery state
+    setprop status.battery.state Slow
+    setprop status.battery.level 5
+    setprop status.battery.level_raw  50
+    setprop status.battery.level_scale 9
+
+    # Set supported opengles version - OpenGLES 2
+    setprop ro.opengles.version 131072
+
+    # Set Display density
+    setprop ro.sf.lcd_density 160
+
+    ## Speaker amp on
+    #write /sys/class/gpio/export 366
+    #write /sys/class/gpio/gpio366/direction high
+    chmod 666 /dev/snd/controlC0
+    chmod 666 /dev/snd/pcmC0D0p
+    chmod 666 /dev/snd/timer
+
+    chown graphics graphics /sys/kernel/debug/sync/sw_sync
+    chmod 777 /sys/kernel/debug/sync/sw_sync
+
+    #write /sys/class/gpio/export 416
+    #write /sys/class/gpio/gpio416/direction in
+    #write /sys/class/gpio/export 417
+    #write /sys/class/gpio/gpio417/direction in
+    #write /sys/class/gpio/export 364
+    #write /sys/class/gpio/gpio364/direction high
+
+    #chmod 666 /dev/i2c-0
+    #chmod 666 /dev/i2c-1
+    #chmod 666 /dev/i2c-2
+    #chmod 666 /dev/i2c-3
+    #chmod 666 /dev/i2c-4
+    #chmod 666 /dev/i2c-5
+    #chmod 666 /dev/i2c-6
+    #chmod 666 /dev/i2c-7
+    #chmod 666 /dev/i2c-8
+    #chmod 666 /dev/i2c-9
+    #chmod 666 /dev/watchdog
+    #chmod 777 /dev/block/mtdblock1
+    #
+    #chmod 755 /system/bin/app_update.sh
+    #chmod 755 /system/bin/spkrvolume
+
+#on boot
+#    setprop wifi.interface wlan0
+
+on property:sys.boot_completed=1
+    # update cpuset now that processors are up
+    # Foreground should contain all cores
+    write /dev/cpuset/foreground/cpus 0-3
+
+    # top-app gets all cpus
+    write /dev/cpuset/top-app/cpus 0-3
+
+    # Add foreground/boost cpuset, it is used for app launches,
+    # and maybe other high priority tasks in the future.
+    # It's to be set to whatever cores should be used
+    # for short term high-priority tasks.
+    write /dev/cpuset/foreground/boost/cpus 0-3
+
+    # background contains a small subset (generally one core)
+    write /dev/cpuset/background/cpus 0
+
+    # limit system background services to use 2 cores
+    write /dev/cpuset/system-background/cpus 0-1
+
+#service mbrx_update /system/bin/sh /system/bin/app_update.sh
+#    class main
+#    user root
+#    seclabel u:r:shell:s0
+#
+#on property:sys.boot_completed=1
+#    start mbrx_update
+
+#service sshd /system/bin/sshd -f /system/etc/ssh/sshd_config
+#    class main
+#    user root
+#    seclabel u:r:shell:s0
+#    disabled
+#    oneshot
+
+#service iVeiOTA /system/bin/iVeiOTA
+#        class main
+#        user root
+#        seclabel u:r:shell:s0
+#        disabled
+#        oneshot
+
+service iv_v4_hal /system/bin/iv_v4_hal
+        class main
+        user root
+        seclabel u:r:shell:s0
+        disabled
+        oneshot
+
+service eth0_dhcp /system/bin/dhcpcd-6.8.2 eth0
+        class main
+        user root
+        seclabel u:r:shell:s0
+        disabled
+        oneshot
+
+
+on property:sys.boot_completed=1
+#    mkdir /data/etc
+#    mkdir /data/etc/ssh
+#    copy /etc/ssh/authorized_keys /data/etc/ssh/authorized_keys
+#    copy /etc/ssh/ssh_host_dsa_key /data/etc/ssh/ssh_host_dsa_key
+#    copy /etc/ssh/ssh_host_rsa_key /data/etc/ssh/ssh_host_rsa_key
+#    start sshd
+#    start iVeiOTA
+#     start iv_v4_hal
+#     exec u:r:shell:s0 root -- /system/bin/ifconfig eth0 up
+#     exec u:r:shell:s0 root -- /system/bin/dhcpcd-6.8.2 eth0
+     
+
+# ALSA audio mixer defaults for speaker out, do before calling play_boot_sound
+#on property:sys.boot_completed=1
+#    exec u:r:shell:s0 root -- /system/bin/tinymix "Right Output Mixer PCM Playback Switch" 1
+#    exec u:r:shell:s0 root -- /system/bin/spkrvolume ${persist.audio.volume}
+#
+#service play_boot_sound /system/bin/tinyplay /system/media/audio/wav/piano2.wav
+#    class main
+#    user root
+#    seclabel u:r:shell:s0
+#    disabled
+#    oneshot
+#
+#on property:sys.boot_completed=1
+#    start play_boot_sound
+#
+#service p2p_supplicant /system/vendor/bin/hw/wpa_supplicant \
+#    -ip2p0 -Dnl80211 -c/data/misc/wifi/p2p_supplicant.conf \
+#    -I/system/etc/wifi/p2p_supplicant_overlay.conf -N \
+#    -iwlan0 -Dnl80211 -c/data/misc/wifi/wpa_supplicant.conf \
+#    -I/system/etc/wifi/wpa_supplicant_overlay.conf \
+#    -O/data/misc/wifi/sockets -puse_p2p_group_interface=1 \
+#    -e/data/misc/wifi/entropy.bin -g@android:wpa_wlan0
+##   we will start as root and wpa_supplicant will switch to user wifi
+##   after setting up the capabilities required for WEXT
+##   user wifi
+##   group wifi inet keystore
+#    class main
+#    socket wpa_wlan0 dgram 660 wifi wifi
+#    disabled
+#    oneshot
+#
+#service wpa_supplicant /system/vendor/bin/hw/wpa_supplicant \
+#    -iwlan0 -Dnl80211 -c/data/misc/wifi/wpa_supplicant.conf \
+#    -I/system/etc/wifi/wpa_supplicant_overlay.conf \
+#    -O/data/misc/wifi/sockets -dd \
+#    -e/data/misc/wifi/entropy.bin -g@android:wpa_wlan0
+#    #   we will start as root and wpa_supplicant will switch to user wifi
+#    #   after setting up the capabilities required for WEXT
+#    #   user wifi
+#    #   group wifi inet keystore
+#    class main
+#    socket wpa_wlan0 dgram 660 wifi wifi
+#    disabled
+#    oneshot
+#

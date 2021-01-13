@@ -1,0 +1,49 @@
+The kernel and device/xilinx branches are different from our standard Android build.  You will want to checkout
+the dev/mwalter/aurora-basler branch of both of those repositories.
+This repository will also contain the config for the landshark build until it is ready to be merged back to master
+
+============================================================
+Currently, only SD boot is supported.  The file landshark/BOOT.BIN will get copied to the boot directory.
+This is the FSBL needed for helios-z8-landshark
+
+============================================================
+When running lunch, select landshark-eng
+
+If you run into trouble building external/v4l-utils, I have provided a copy of a working source tree at
+device/xilinx/aurora/v4l-utils-14.2-working
+
+The v4l-utils for the Mentor/Xilinx Android port are provided by Mentor and are supposed to work, but
+I have had some issues (mostly the order things get built in, so if you re-run the build a few times
+it eventually works).  So if you run into trouble with that you should be able to just copy my version
+over to /external/v4l-utils.
+
+============================================================
+To create the SD-Card:
+Format the card in the following way
+Parition:  FS-Type:    Size:            Purpose
+1          FAT         1G               boot
+2          ext4        1G               /root
+3          extended    20G              
+4          ext4        remaining        /data
+5          ext4        10G              /system
+6          ext4        10G              /cache
+
+The files in out/target/product/landshark/boot should be placed into the boot partition
+
+The default is to boot using a ramdisk, so the root partition does not matter
+The uEnv.txt loaded by u-boot defaults to running the boot.scr script to boot the system.  You
+can look at the contents of that script to see how the boot proceeds.
+
+out/target/product/landshark/system.img should be copied to the system partition using dd
+
+============================================================
+The camera capture application does not start automatically.  You will want to start it by running
+iv_v4_hal -d --cups=0 --dsb=0
+
+The -d means enable debug printing, which is a lot.  After that a lot of text will flow by, and you
+cannot communicate with the server until that happens.
+
+--cups=0 and --dsb=0 disables cups and dsb respectively (cameras will be enabled).  They have not
+yet been tested, so currently running with just cameras is safest.
+
+After (or during) integration, remove those tokens to test those aspects of the system.
