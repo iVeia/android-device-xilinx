@@ -210,7 +210,7 @@ namespace iv4 {
     if(mediaDevNum == 0) {
       RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
       RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
-      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"iveia-basler-mipi 2-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"iveia-basler-mipi 3-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
       RunCommand("/system/bin/v4l2-ctl -d /dev/video0 --set-fmt-video=width="+width+",height="+height+",pixelformat='"+vformat+"'");
     }
 
