@@ -1,8 +1,0 @@
-service iVeiOTA /system/bin/iVeiOTA
-    class main
-    #user root
-    #group root
-    user system
-    group system
-    disabled
-    

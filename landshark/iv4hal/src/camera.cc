@@ -157,8 +157,7 @@ namespace iv4 {
     if(mediaDevNum == 0) {
       mediaSubDev = "/dev/v4l-subdev0";      
     }  else if(mediaDevNum == 1) {
-      debug << Debug::Mode::Failure << "Media device " << mediaDevNum << " not yet supported" << std::endl;
-      return std::tuple<int,int>(0,0);
+      mediaSubDev = "/dev/v4l-subdev2";
     } else {
       debug << Debug::Mode::Failure << "Media device " << mediaDevNum << " not known" << std::endl;
       return std::tuple<int,int>(0,0);
@@ -212,6 +211,11 @@ namespace iv4 {
       RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
       RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"iveia-basler-mipi 3-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
       RunCommand("/system/bin/v4l2-ctl -d /dev/video0 --set-fmt-video=width="+width+",height="+height+",pixelformat='"+vformat+"'");
+    } else if(mediaDevNum == 1) {
+      RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"a0020000.mipi_csi2_rx_subsystem\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"a0020000.mipi_csi2_rx_subsystem\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"iveia-basler-mipi 4-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/v4l2-ctl -d /dev/video1 --set-fmt-video=width="+width+",height="+height+",pixelformat='"+vformat+"'");
     }
 
     // 
@@ -279,12 +283,15 @@ namespace iv4 {
     close(media_fd);
     playback.close(); // This will happen when scope closes, but do it anyway
     
-  } // end Initialize
+  } // end Playback
 
   
   CameraInterface::CameraInterface(const std::string &videoDev,
+                                   int mediaDevNum,
                                    int width, int height) :
-    _width(width), _height(height), _vdev(videoDev), _camfd(-1)  {    
+    _width(width), _height(height), _vdev(videoDev), _camfd(-1)  {
+    udma_addr = nullptr;
+    devNum = mediaDevNum;
     streaming = false;
   }
 
@@ -364,16 +371,11 @@ namespace iv4 {
   }
 
   bool CameraInterface::StreamOn() {
-    enum v4l2_buf_type type;
     if(streaming) return true;
     debug << "Turning streaming on" << std::endl;
 
-    type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-    if (-1 == xioctl(_camfd, VIDIOC_STREAMON, &type)) {
-      debug << Debug::Mode::Failure << _vdev << ": StreamOn " << strerror(errno) << std::endl;;
-      return false;
-    }
-
+    InitializeV4L2();
+    
     streaming = true;
     return streaming;
   }
@@ -381,24 +383,38 @@ namespace iv4 {
   bool CameraInterface::StreamOff() {
     // TODO: We can't turn the camera off at the moment, so we can't disable streaming
     //        When we have control over the camera, we have to turn it off first, then send STREAMOFF
+    debug << "Turning streaming off" << std::endl;
+    DeInitializeV4L2();
+
     streaming = false;
     return !streaming;
     /*
-    enum v4l2_buf_type type;
     if(!streaming) return true;
     debug << "Turning streaming off" << std::endl;
     
-    type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-    if (-1 == xioctl(_camfd, VIDIOC_STREAMOFF, &type)) {
-      debug << Debug::Mode::Failure << _vdev << ": StreamOff " << strerror(errno) << std::endl;;
-      return false;
-    }
-
-    streaming = false;
-    return !streaming;
     */
   }
 
+  bool CameraInterface::DeInitializeV4L2() {
+    if(_camfd >= 0) {
+      enum v4l2_buf_type type;
+      type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+      if (-1 == xioctl(_camfd, VIDIOC_STREAMOFF, &type)) {
+        debug << Debug::Mode::Failure << _vdev << ": StreamOff " << strerror(errno) << std::endl;;
+        return false;
+      }
+      
+      close(_camfd);
+      _camfd = -1;
+    }
+
+    if(udma_addr != nullptr) {
+      munmap(udma_addr, udma_len);
+    }
+
+    return true;
+  }
+  
   bool CameraInterface::InitializeV4L2() {
     // open up the video device
     
@@ -412,7 +428,7 @@ namespace iv4 {
       CLEAR(req);
 
       // TODO: How many buffers?
-      req.count = 4;
+      req.count = 2;
       req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
       //req.memory = V4L2_MEMORY_MMAP;
       //req.memory = V4L2_MEMORY_DMABUF;
@@ -457,7 +473,8 @@ namespace iv4 {
         num_buffers = req.count;
         
         debug << Debug::Mode::Debug << "Num planes: " << num_planes <<
-          " plane size: " << plane_len << std::endl;
+          " plane size: " << plane_len <<
+          " num buffers: " << num_buffers << std::endl;
         if(num_planes != 1) {
           debug << Debug::Mode::Warn << "Number of planes is not 1.  Not supported: " << num_planes << std::endl;
         }
@@ -465,19 +482,25 @@ namespace iv4 {
 
       {
         // We need to get our udma buffer now
-        int ufd = open("/dev/udmabuf0", O_RDWR);
+        std::string dmabufDev = "";
+        if(devNum == 0) dmabufDev = "/dev/udmabuf0";
+        else if(devNum == 1) dmabufDev = "/dev/udmabuf1";
+        else {
+          debug << Debug::Mode::Failure << "Unknown device number: " << devNum << std::endl;
+        }
+        int ufd = open(dmabufDev.c_str(), O_RDWR);
         if(ufd < 0) {
-          debug << Debug::Mode::Warn << "Opening " << "/dev/udmabuf0" << " failed." << std::endl;
+          debug << Debug::Mode::Warn << "Opening " << dmabufDev << " failed." << std::endl;
         } else {
           // Map in the user dma buffer and close the backing file
           udma_len = num_buffers * plane_len;
           udma_addr = static_cast<uint8_t*>(mmap(NULL, udma_len, PROT_READ | PROT_WRITE, MAP_SHARED, ufd, 0));
           close(ufd);
           
-          debug << "Opened " << "/dev/udmabuf0" << " and mapped " << udma_len << " bytes to " <<
+          debug << "Opened " << dmabufDev << " and mapped " << udma_len << " bytes to " <<
             static_cast<void*>(udma_addr) << std::endl;
           
-          // I need to touch every page in the mmap'd region to page them in
+          // I need to touch every page in the mmap'd region to page them in - if you don't do this it crashes
           uint8_t *buf_ptr = udma_addr;
           uint8_t qq_tmp = 77;
           while(buf_ptr < (udma_addr + udma_len)) {
@@ -559,11 +582,20 @@ namespace iv4 {
       } // end for over each buffer
     }
 
+    // Finally, enable streaming on the camera
+    enum v4l2_buf_type type;
+    type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+    if (-1 == xioctl(_camfd, VIDIOC_STREAMON, &type)) {
+      debug << Debug::Mode::Failure << _vdev << ": StreamOn " << strerror(errno) << std::endl;;
+      return false;
+    } else {
+      debug << Debug::Mode::Info << _vdev << ": StreamOn succeeded" << std::endl;
+    }
+
     return true;
   } // end CameraInterface::CameraInterface
 
   CameraInterface::~CameraInterface() {
-    // open says it returns a "small non-negative integer" so I guess 0 is valid
     debug << "Closing " << _camfd << std::endl;
     if(_camfd >= 0) close(_camfd);
 
@@ -638,7 +670,7 @@ namespace iv4 {
     struct cambuf &imgBuf = buffers[buf.index];
 
     // TODO: Support more image types here?
-    uint32_t wcam = 0; // TODO: At the moment we only have one camera, need to know the number if there are >1
+    uint32_t wcam = devNum;
     uint32_t res = ((_width<<16) & 0xFFFF0000) | (_height & 0x0000FFFF);
     uint32_t msgs = 0x00010001; // At the moment we only send one message / image
     uint32_t itype = ToInt(ImageType::UYVY);

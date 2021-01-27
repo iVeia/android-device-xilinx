@@ -104,17 +104,24 @@ int main(int argc, char ** argv) {
     // Camera0 First
     std::tuple<int,int> res0 = CameraInterface::InitializeBaslerCamera(0);
     cameras.push_back(CameraInterface("/dev/video0",
+                                      0,
                                       std::get<0>(res0),
-                                      std::get<1>(res0)));
-    
+                                      std::get<1>(res0)));    
     debug << Debug::Mode::Info << "Initialized /dev/video0 " << (void*)&cameras.back() << "with resolution " <<
       std::get<0>(res0) << "," <<  std::get<1>(res0) << std::endl;
-    // Next Camera would go here
+
+    std::tuple<int,int> res1 = CameraInterface::InitializeBaslerCamera(1);
+    cameras.push_back(CameraInterface("/dev/video1",
+                                      1,
+                                      std::get<0>(res1),
+                                      std::get<1>(res1)));    
+    debug << Debug::Mode::Info << "Initialized /dev/video1 " << (void*)&cameras.back() << "with resolution " <<
+      std::get<0>(res1) << "," <<  std::get<1>(res1) << std::endl;
   }
 
   ChillUPSInterface *cups = nullptr;
   if(use_cups) {
-    cups = new ChillUPSInterface("/dev/i2c-5");
+    cups = new ChillUPSInterface("/dev/i2c-0");
   }
 
   DSBInterface *dsb = nullptr;
@@ -138,11 +145,12 @@ int main(int argc, char ** argv) {
        message.header.subType == Message::Management.Initialize) {
       // Initialize has been called
       if(!initialized) {
-        debug << "Initializing " << cameras.size() << " cameras" << std::endl;
-        for(CameraInterface &cam : cameras) {
-          cam.InitializeV4L2();
-          debug << "Initialized camera " << (void*)&cam << std::endl;
-        }
+        //debug << "Initializing " << cameras.size() << " cameras" << std::endl;
+        //for(CameraInterface &cam : cameras) {
+        //  cam.InitializeV4L2();
+        //  debug << "Initialized camera " << (void*)&cam << std::endl;
+        //}
+        
 
         if(cups != nullptr) {
           cups->Initialize(eventServer);
@@ -228,10 +236,10 @@ int main(int argc, char ** argv) {
           if(message.header.subType == Message::Lights.SetLights) {
             debug << "Setting pot to " << std::hex << (int)message.header.imm[0] <<
               std::dec << std::endl;
-            SetPot("/dev/i2c-5", 0x2C, message.header.imm[0]);
+            SetPot("/dev/i2c-0", 0x2C, message.header.imm[0]);
             resp.push_back(Message::MakeACK(message));
           } else if(message.header.subType == Message::Lights.GetLights) {
-            uint8_t val = GetPot("/dev/i2c-5", 0x2C);
+            uint8_t val = GetPot("/dev/i2c-0", 0x2C);
             debug << "Got pot value of " << std::hex << (int)val <<
               std::dec << std::endl;
             resp.push_back(unique_ptr<Message>(new Message(Message::Lights, Message::Lights.GetLights,

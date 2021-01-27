@@ -70,17 +70,19 @@ namespace iv4 {
     //  via I2C.
     // We don't really know how the camera works, so we record I2C traffic from their binary
     //  only library, then play it back to configure the camera
-    static std::tuple<int,int> InitializeBaslerCamera(int mediaDevNum);
+    static std::tuple<int,int> InitializeBaslerCamera(int mediaDevNum);    
 
     // TODO: Replace all this with an identifier that gets
     //       matched to a camera in a config file
     CameraInterface(const std::string &ovideoDev,
+                    int mediaDevNum,
                     int width, int height);
     ~CameraInterface();
     
     // V4l2 controls
     bool InitializeV4L2(); // Initialize v4l2 (query the dev node, get mmap buffers)
     bool StreamOn();       // Send STREAMON to v4l2 system
+    bool DeInitializeV4L2();
     bool StreamOff();      // Send STREAMOFF to v4l2 system
           
     
@@ -109,6 +111,7 @@ namespace iv4 {
 
     // The path to our video device 
     std::string _vdev;
+    int devNum;
 
     // Information for the v4l2 sub-system
     int _camfd;      // The file descriptor to the /dev/videoX device
