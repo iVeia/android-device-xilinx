@@ -40,16 +40,26 @@ PRODUCT_COPY_FILES +=  \
     frameworks/native/data/etc/android.hardware.usb.accessory.xml:system/etc/permissions/android.hardware.usb.accessory.xml \
     frameworks/native/data/etc/android.hardware.usb.host.xml:system/etc/permissions/android.hardware.usb.host.xml \
     frameworks/native/data/etc/android.hardware.wifi.xml:system/etc/permissions/android.hardware.wifi.xml \
+    device/xilinx/landshark/wpa_supplicant.conf:system/etc/wifi/wpa_supplicant.conf \
+    device/xilinx/landshark/wpa_supplicant_overlay.conf:system/etc/wifi/wpa_supplicant_overlay.conf \
+    device/xilinx/landshark/scripts/app_update.sh:system/bin/app_update.sh \
+    device/xilinx/landshark/scripts/spkrvolume:system/bin/spkrvolume \
 
 # We also need video 4 linux
 PRODUCT_PACKAGES += libv4l_convert
 PRODUCT_PACKAGES += libv4l2 v4l2-ctl libv4l2subdev libmediactl media-ctl 
 
 # Add sshd
-#PRODUCT_PACKAGES += ssh sftp scp sshd ssh-keygen sshd_config start-ssh
-#PRODUCT_COPY_FILES +=  \
-#    device/xilinx/landshark/ssh/sshd_config:system/etc/ssh/sshd_config \
-#    device/xilinx/landshark/ssh/empty:root/var/run/ssh/empty/empty \
+# Add sshd
+PRODUCT_PACKAGES += ssh sftp scp sshd ssh-keygen sshd_config start-ssh
+PRODUCT_COPY_FILES +=  \
+    device/xilinx/landshark/ssh/authorized_keys:system/etc/ssh/authorized_keys \
+    device/xilinx/landshark/ssh/sshd_config:system/etc/ssh/sshd_config \
+    device/xilinx/landshark/ssh/ssh_host_dsa_key:system/etc/ssh/ssh_host_dsa_key \
+    device/xilinx/landshark/ssh/ssh_host_dsa_key.pub:system/etc/ssh/ssh_host_dsa_key.pub \
+    device/xilinx/landshark/ssh/ssh_host_rsa_key:system/etc/ssh/ssh_host_rsa_key \
+    device/xilinx/landshark/ssh/ssh_host_rsa_key.pub:system/etc/ssh/ssh_host_rsa_key.pub \
+    device/xilinx/landshark/ssh/empty:root/var/run/ssh/empty/empty \
 
 PRODUCT_PACKAGES += iv_v4_hal iv_v4_hal_client
 PRODUCT_COPY_FILES += \
@@ -89,6 +99,27 @@ PRODUCT_PACKAGES += \
 	libion \
 	libdrm \
 	modetest 
+
+# Add wifi-related packages
+PRODUCT_PACKAGES += \
+    libwpa_client \
+    hostapd \
+    wpa_supplicant \
+    wpa_supplicant.conf
+
+PRODUCT_COPY_FILES +=  \
+    device/xilinx/landshark/brcm/4343w.hcd:system/etc/firmware/brcm/4343w.hcd \
+    device/xilinx/landshark/brcm/brcmfmac43430-sdio.bin:system/etc/firmware/brcm/brcmfmac43430-sdio.bin \
+    device/xilinx/landshark/brcm/brcmfmac43430-sdio.txt:system/etc/firmware/brcm/brcmfmac43430-sdio.txt \
+    device/xilinx/landshark/brcm/bcm4343w/4343w.hcd:system/etc/firmware/brcm/bcm4343w/4343w.hcd \
+    device/xilinx/landshark/brcm/bcm4343w/brcmfmac43430-sdio.bin:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio.bin \
+    device/xilinx/landshark/brcm/bcm4343w/brcmfmac43430-sdio.txt:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio.txt \
+    device/xilinx/landshark/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio-fcc.txt \
+    device/xilinx/landshark/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin:system/etc/firmware/brcm/bcm4343w/brcmfmac43430-sdio-prod.bin \
+
+KERNEL_MODULES += \
+	drivers/net/wireless/broadcom/brcm80211/brcmfmac/brcmfmac.ko \
+	drivers/net/wireless/broadcom/brcm80211/brcmutil/brcmutil.ko 
 
 # eMMC install script
 PRODUCT_COPY_FILES += \

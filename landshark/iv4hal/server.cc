@@ -121,7 +121,7 @@ int main(int argc, char ** argv) {
 
   ChillUPSInterface *cups = nullptr;
   if(use_cups) {
-    cups = new ChillUPSInterface("/dev/i2c-0");
+    cups = new ChillUPSInterface("/dev/i2c-2");
   }
 
   DSBInterface *dsb = nullptr;
@@ -230,20 +230,31 @@ int main(int argc, char ** argv) {
         }
         break;
 
-      case Message::Lights:
+      case Message::Hardware:
         {
           //TODO: Roll this into its own class/handler
-          if(message.header.subType == Message::Lights.SetLights) {
-            debug << "Setting pot to " << std::hex << (int)message.header.imm[0] <<
+          if(message.header.subType == Message::Hardware.SetLights) {
+            uint8_t lightsVal = (int)message.header.imm[0];
+            if(lightsVal < 20) lightsVal = 20;
+            debug << "Setting pot to " << std::hex << lightsVal <<
               std::dec << std::endl;
-            SetPot("/dev/i2c-0", 0x2C, message.header.imm[0]);
+            SetPot("/dev/i2c-0", 0x2C, lightsVal);
             resp.push_back(Message::MakeACK(message));
-          } else if(message.header.subType == Message::Lights.GetLights) {
+          } else if(message.header.subType == Message::Hardware.GetLights) {
             uint8_t val = GetPot("/dev/i2c-0", 0x2C);
             debug << "Got pot value of " << std::hex << (int)val <<
               std::dec << std::endl;
-            resp.push_back(unique_ptr<Message>(new Message(Message::Lights, Message::Lights.GetLights,
-                                                           val, 0, 0, 0)));            
+            resp.push_back(unique_ptr<Message>(new Message(Message::Hardware, Message::Hardware.GetLights,
+                                                           val, 0, 0, 0)));
+          } else if(message.header.subType == Message::Hardware.SetBuzzer) {
+            debug << "Setting buzzer: " << (int)message.header.imm[0] << std::endl;
+            bool set = (message.header.imm[0] == 0) ? (false) : (true);
+            // TODO: don't call out to shell just to write values to GPIO
+            if(set) {
+              RunCommand("echo 1 > /sys/class/gpio/gpio347/value");
+            } else {
+              RunCommand("echo 0 > /sys/class/gpio/gpio347/value");
+            }
           }
 
         }
@@ -280,6 +291,7 @@ int main(int argc, char ** argv) {
 
   // Our event loop
   bool done = false;
+  bool doorSensor = false;
   debug << "Entered event loop" << std::endl;
   while(!exiting) {
 
@@ -362,6 +374,29 @@ int main(int argc, char ** argv) {
 
     if(dsb != nullptr && initialized) {
       dsb->ProcessMainLoop(eventServer);
+    }
+
+    // Finally, check the door sensor
+    {      
+      ifstream dsin;
+      dsin.open("/sys/class/gpio/gpio463/value");
+      string ds_buf = "";
+      dsin >> ds_buf;
+      dsin.close();
+
+      if(ds_buf.length() > 0) {
+        bool _doorSensor = (ds_buf[0] == '1');
+        if(_doorSensor != doorSensor) {
+          Message msg(Message::Hardware, Message::Hardware.DoorEvent,
+                      _doorSensor?1:0, 0, 0, 0);
+          eventServer.Send(msg);
+
+          doorSensor = _doorSensor;
+        }
+        
+      } else {
+        debug << "Failed to read ds" << std::endl;
+      }
     }
     
     // TODO: Implement a timeout here so that if we are killed but the sockets dont close

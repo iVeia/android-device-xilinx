@@ -344,8 +344,8 @@ namespace iv4 {
       
     } DSB;
 
-    static struct _LightsMessage {
-      //! HAL message to interact with lights
+    static struct _HardwareMessage {
+      //! HAL message to interact with the hardware
       constexpr operator uint8_t() const {return 0x05;}
       //! Set the state of the lights
       /*!
@@ -356,15 +356,28 @@ namespace iv4 {
       /*!
         imm[0] : The current value of the lights
       */
-      constexpr static uint8_t GetLights    = 0x20;
+      constexpr static uint8_t GetLights    = 0x12;
+      //! Set/Clear the buzzer
+      /*!
+        imm[0] : 1 to set the buzzer, 0 to clear it
+      */
+      constexpr static uint8_t SetBuzzer    = 0x20;
+
+      //! Door event
+      /*!
+        imm[0]: 0 on close, 1 on open
+      */
+      constexpr static uint8_t DoorEvent    = 0xE0;
       std::string toString(uint8_t sub) {
         switch(sub) {
-        case SetLights: return "Lights::SetLights";
-        case GetLights: return "Lights::GetLights";
-        default       : return "Lights::Invalid";
+        case SetLights: return "Hardware::SetLights";
+        case GetLights: return "Hardware::GetLights";
+        case SetBuzzer: return "Hardware::SetBuzzer";
+        case DoorEvent: return "Hardware::DoorEvent";
+        default       : return "Hardware::Invalid";
         }
       }
-    } Lights;
+    } Hardware;
     
     //! The message header for HAL messages
     /*!

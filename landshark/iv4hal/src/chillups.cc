@@ -34,8 +34,10 @@ namespace iv4 {
 
   bool ChillUPSInterface::open() {
     i2cfd = ::open(_dev.c_str(), O_RDWR);
-    if(opened()) return true;
-    else {
+    if(opened()) {
+      debug << Debug::Mode::Debug << "CUPS opened " << _dev << std::endl;
+      return true;
+    } else {
       debug << Debug::Mode::Failure << "Failed to open i2c dev: " << _dev << ":" <<
         strerror(errno) << std::endl;
       return false;

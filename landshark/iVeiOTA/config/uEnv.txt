@@ -13,7 +13,7 @@ boot_path=/
 boot_ab_file=uEnvAB.txt
 
 # Needed for android
-otherargs=init=/init androidboot.selinux=permissive androidboot.hardware=zcu102 firmware_class.path=/system/etc/firmware clk_ignore_unused
+otherargs=init=/init androidboot.selinux=permissive androidboot.hardware=landshark firmware_class.path=/system/etc/firmware clk_ignore_unused
 
 #
 # Convert SN to MAC addr

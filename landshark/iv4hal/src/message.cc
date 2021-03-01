@@ -7,7 +7,7 @@ namespace iv4 {
   struct Message::_ImageMessage          iv4::Message::Image;
   struct Message::_CUPSMessage           iv4::Message::CUPS;
   struct Message::_DSBMessage            iv4::Message::DSB;
-  struct Message::_LightsMessage         iv4::Message::Lights;
+  struct Message::_HardwareMessage       iv4::Message::Hardware;
   
   std::string Message::Header::toString() const {
     std::stringstream ss;
@@ -16,7 +16,7 @@ namespace iv4 {
     case Message::Image:          ss << Message::Image.toString(subType);          break;
     case Message::CUPS:           ss << Message::CUPS.toString(subType);           break;
     case Message::DSB:            ss << Message::DSB.toString(subType);            break;
-    case Message::Lights:         ss << Message::Lights.toString(subType);         break;
+    case Message::Hardware:       ss << Message::Hardware.toString(subType);       break;
     default: return "Invalid:Invalid";
     }
     

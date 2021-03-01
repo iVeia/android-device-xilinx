@@ -3,7 +3,7 @@
 
 // Semantic versioning for the OTA server/client
 #define IV4HAL_MAJOR 0
-#define IV4HAL_MINOR 4
+#define IV4HAL_MINOR 5
 #define IV4HAL_PATCH 0
 
 // The UNIX domain socket the server will communicate on

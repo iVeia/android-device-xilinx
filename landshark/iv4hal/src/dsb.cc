@@ -268,7 +268,7 @@ bool DSBInterface::ProcessMainLoop(SocketInterface &intf, bool send) {
 
   // If there are broadcast messages send them now
   if(send) {
-    if(events.size() > 0) debug << "Sending " << events.size() << " events" << std::endl;
+    if(events.size() > 0) debug << "DSB Sending " << events.size() << " events" << std::endl;
     for(DrawerEvent evt : events) {
       Message msg(Message::DSB, Message::DSB.DrawerStateChanged,
                   evt.index, evt.solenoid, evt.event, evt.position);
@@ -291,7 +291,7 @@ uint32_t DSBInterface::GetVersions() const {
 
   for(const DSB &dsb : dsbs) {
     vers = ((vers << 8) & 0xFFFFFF00) | (dsb.version & 0x000000FF);
-    debug << std::hex << "0x" << vers << " :: ";
+    debug << std::hex << "DSB: 0x" << vers << " :: ";
   }
   debug << std::dec << std::endl;
 
@@ -321,7 +321,7 @@ bool DSBInterface::send(uint8_t addr, uint8_t type,
   case 4: start |= 0x40; break;
   case 8: start |= 0x30; break;
   default:
-    debug << Debug::Mode::Err << "Tried to call send with data of size " << dat.size() << std::endl;
+    debug << Debug::Mode::Err << "DSB Tried to call send with data of size " << dat.size() << std::endl;
     return false;
   }
   dat.insert(dat.begin(), start);
@@ -444,7 +444,6 @@ bool DSBInterface::_recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg
     
     // We have data available, so read a byte and process it
     else if(avail > 0) {
-      debug << "RS-485 bytes available: " << avail << std::endl;
     
       uint8_t byte;
       read(devFD, &byte, 1);
@@ -479,7 +478,7 @@ bool DSBInterface::_recv(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg
             return false;
           }          
           
-          debug << "MSG: " << std::hex << (int)addr << ":" <<  (int)len << ":" <<  (int)type << ":";
+          debug << "DSB MSG: " << std::hex << (int)addr << ":" <<  (int)len << ":" <<  (int)type << ":";
           for(unsigned int i = 0; i < msg.size(); i++) debug <<  (int)msg[i] << ":";
           debug <<  (int)crc << std::dec << std::endl;
           done = true;
