@@ -80,6 +80,7 @@ namespace iv4 {
   }
 
   static int basler_get_info(const std::string &subdev, struct basler_device_information *info) {
+    debug << "Trying to open camera at " << subdev << std::endl;
     int media_fd = open(subdev.c_str(), O_RDWR);
     struct v4l2_ext_controls ext_controls;
     struct v4l2_ext_control  ext_control;
@@ -155,7 +156,7 @@ namespace iv4 {
   std::tuple<int,int> CameraInterface::InitializeBaslerCamera(int mediaDevNum) {
     std::string mediaSubDev = "";
     if(mediaDevNum == 0) {
-      mediaSubDev = "/dev/v4l-subdev0";      
+      mediaSubDev = "/dev/v4l-subdev1";      
     }  else if(mediaDevNum == 1) {
       mediaSubDev = "/dev/v4l-subdev2";
     } else {
@@ -186,13 +187,17 @@ namespace iv4 {
     std::string format = "";
     std::string vformat = "";
     std::string width = "";
-   std::string height = "";
+    std::string height = "";
+    std::string width_2 = "";
+    std::string height_2 = "";
     switch(cameraType) {
     case 1:
       format = "UYVY8_1X16";
       vformat = "UYVY";
       width = "2592";
       height = "1944";
+      width_2 = "1296";
+      height_2 = "972";
       break;
     case 2:
       format = "UYVY8_1X16";
@@ -203,18 +208,20 @@ namespace iv4 {
     default:
       debug << Debug::Mode::Failure << "Unknown camera type! " << cameraType << std::endl;
       return std::tuple<int,int>(0,0);
-    }
+    }    
 
     // TODO: Maybe look the names of the media devices up using v4l2 APIs?
     if(mediaDevNum == 0) {
-      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"iveia-basler-mipi 7-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
       RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
-      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"iveia-basler-mipi 3-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
-      RunCommand("/system/bin/v4l2-ctl -d /dev/video0 --set-fmt-video=width="+width+",height="+height+",pixelformat='"+vformat+"'");
+      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0030000.iveia_scaler\":0 [fmt:"+format+"/"+(width_2)+"x"+(height_2)+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0030000.iveia_scaler\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/v4l2-ctl -d /dev/video0 --set-fmt-video=width="+(width_2)+",height="+(height_2)+",pixelformat='"+vformat+"'");
     } else if(mediaDevNum == 1) {
       RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"a0020000.mipi_csi2_rx_subsystem\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
       RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"a0020000.mipi_csi2_rx_subsystem\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
-      RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"iveia-basler-mipi 4-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"iveia-basler-mipi 8-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
       RunCommand("/system/bin/v4l2-ctl -d /dev/video1 --set-fmt-video=width="+width+",height="+height+",pixelformat='"+vformat+"'");
     }
 
@@ -290,6 +297,10 @@ namespace iv4 {
                                    int mediaDevNum,
                                    int width, int height) :
     _width(width), _height(height), _vdev(videoDev), _camfd(-1)  {
+    _width_2 = width / 2;
+    _height_2 = height / 2;
+    destLen = _width_2 * _height_2 * 4;
+    dest = new uint8_t[destLen]; // RGB + Gray
     udma_addr = nullptr;
     devNum = mediaDevNum;
     streaming = false;
@@ -303,8 +314,9 @@ namespace iv4 {
       {
         if(m.header.imm[2] == 1) {
           // Enable capturing
-          captureSkip = m.header.imm[3];
-          if(captureSkip < 0) captureSkip = 0;
+          //captureSkip = m.header.imm[3];
+          //if(captureSkip < 0) captureSkip = 0;
+          //captureSkip = 0;
           captureTypes = GetImageTypes(m.header.imm[1]);
           if(!streaming) StreamOn();
           capturing = true;
@@ -324,6 +336,7 @@ namespace iv4 {
         oneshot = true;
       }
       break;
+      
     case Message::Image.GetImage:
       {
         // In order to get an image, we need:
@@ -539,21 +552,7 @@ namespace iv4 {
         debug << Debug::Mode::Debug << "query buf = len:" <<
           planes[0].length << " offset:" << planes[0].m.mem_offset << ":" << std::endl;
         
-        size_t tbuflen = planes[0].length;        
-        // for mmap memory
-        //void *tbuf     = mmap(NULL                   /* start anywhere */,
-        //                      planes[0].length,
-        //                      PROT_READ | PROT_WRITE /* required */,
-        //                      MAP_SHARED             /* recommended */,
-        //                      _camfd,
-        //                      planes[0].m.mem_offset);
-        //void *tbuf = mmap(NULL,
-        //                  planes[0].length,
-        //                  PROT_READ | PROT_WRITE,
-        //                  MAP_SHARED,
-        //                  fd,
-        //                  0);
-        
+        size_t tbuflen = planes[0].length;
         cambuf push_buf;        
         push_buf.len = tbuflen;
         push_buf.addr = udma_addr + (tbuflen * bnum);
@@ -564,17 +563,13 @@ namespace iv4 {
           " is at offset " << static_cast<void*>(buffers[bnum].addr) <<
           " with length " << buffers[bnum].len << std::endl;
         
-        //if (MAP_FAILED == buffers[bnum].addr) {
-        //  debug << Debug::Mode::Failure << _vdev << ": mmap: " << strerror(errno) << std::endl;;
-        //  return false;
-        //}
-        
         // Then we queue up the buffer
         planes[0].m.userptr = reinterpret_cast<unsigned long>(buffers[bnum].addr);
         debug << "buffer " << bnum << ":" << 0 << " addr is: " <<
           reinterpret_cast<void*>(buf.m.planes[0].m.userptr) << std::endl;
         if (-1 == xioctl(_camfd, VIDIOC_QBUF, &buf)) {
-          debug << Debug::Mode::Failure << _vdev << ": QBUF failed " << bnum << " " << strerror(errno) << std::endl;
+          debug << Debug::Mode::Failure << _vdev << ": QBUF failed " << bnum << " " <<
+            strerror(errno) << std::endl;
           return false;
         } else {
           debug << "queueing buffer " << buf.index << " for " << _camfd << std::endl;
@@ -602,9 +597,115 @@ namespace iv4 {
     for(auto cbuf : buffers) {
       if(cbuf.len > 0) munmap(cbuf.addr, cbuf.len);
     }
+
+    delete [] dest;
     
   } // end CameraInterface::~CameraInterface
 
+  void CameraInterface::ProcessBuffer(uint8_t *in) {
+    int lineLength = _width*2;
+    
+    uint8_t *oRGB = dest;
+    uint8_t *oGray = dest + (_width_2 * _height_2 * 3);
+
+    int u1, y11, v1, y12;
+    int u2, y21, v2, y22;
+
+    float yavg, uavg, vavg;
+    int r, g, b;
+
+    int i1 = 0;
+    int i2 = lineLength;
+    int dest1 = 0;
+    int dest2 = 0;
+    
+    bool done = false;
+    while(!done) {
+      // Get a 2x2 block of pixels
+      u1  = in[i1++];
+      y11 = in[i1++];
+      v1  = in[i1++];
+      y12 = in[i1++];
+
+      u2  = in[i2++];
+      y21 = in[i2++];
+      v2  = in[i2++];
+      y22 = in[i2++];
+
+      // Get the average of them
+      yavg = (y11 + y12 + y21 + y22) / 4.0;
+      uavg = ((u1 + u2) / 2.0) - 128;
+      vavg = ((v1 + v2) / 2.0) - 128;
+
+      // And convert to RGB
+      r = (int) (yavg + 0.0000 * uavg + 1.14   * vavg);
+      g = (int) (yavg - 0.395  * uavg - 0.581  * vavg);
+      b = (int) (yavg + 2.032  * uavg + 0.0000 * vavg);
+
+      // Clamp to 8-bit color
+      if(r < 0) r = 0;
+      if(r > 255) r = 255;
+      if(g < 0) g = 0;
+      if(g > 255) g = 255;
+      if(b < 0) b = 0;
+      if(b > 255) b = 255;
+      oRGB[dest1++] = r;
+      oRGB[dest1++] = g;
+      oRGB[dest1++] = b;
+      oGray[dest2++] = yavg;
+
+          // If we have wrapped around to the next row increment by one row
+      //  since we are doing 2x2 blocks at a time
+      if((i1 % lineLength) == 0) {
+        i1 += lineLength;
+        i2 += lineLength;
+
+        // Check to see if we have gone past the end of the image
+        if((i2 / lineLength) >= _height) {
+          done = true;
+        }
+      }
+    }
+  }
+
+  bool CameraInterface::DropFrame() {
+    struct v4l2_buffer buf;
+    struct v4l2_plane planes[VIDEO_MAX_PLANES];
+    CLEAR(buf);
+    CLEAR(planes);
+    
+    buf.type     = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+    //buf.memory   = V4L2_MEMORY_MMAP;
+    //buf.memory   = V4L2_MEMORY_DMABUF;
+    buf.memory   = V4L2_MEMORY_USERPTR;
+    buf.m.planes = planes;
+    buf.length   = VIDEO_MAX_PLANES;
+
+    // NOTE: This event loop relies on the videodev being open in NONBLOCK mode
+    if (-1 == xioctl(_camfd, VIDIOC_DQBUF, &buf)) {
+      switch (errno) {
+      case EAGAIN:
+        // There is no frame yet, so continue on and try again next time
+        debug << "Got EAGAIN getting a frame" << std::endl;
+        return false;
+      default:
+        // There is an error in the v4l2 pipeline
+        debug << Debug::Mode::Failure <<
+          "buffer dequeue: " << _camfd << ":" << strerror(errno) << std::endl;
+        return false;
+      }
+    } else {
+      // Got a frame, so drop it
+      debug << "Got a frame from buffer " << buf.index << " on " << _camfd << std::endl;
+      if (-1 == xioctl(_camfd, VIDIOC_QBUF, &buf)) {
+        debug << "Failed to requeue buffer: " << strerror(errno) << std::endl;
+        return true;
+      }
+    }
+
+    return false;
+  }
+  
   bool CameraInterface::ProcessMainLoop(SocketInterface &intf) {
     if(!IsGood()) {
       //debug << "Camera is not good in ProcessMainLoop: " << _camfd << ":" <<
@@ -671,22 +772,18 @@ namespace iv4 {
 
     // TODO: Support more image types here?
     uint32_t wcam = devNum;
-    uint32_t res = ((_width<<16) & 0xFFFF0000) | (_height & 0x0000FFFF);
+    uint32_t res = ((_width_2<<16) & 0xFFFF0000) | (_height_2 & 0x0000FFFF);
     uint32_t msgs = 0x00010001; // At the moment we only send one message / image
     uint32_t itype = ToInt(ImageType::UYVY);
 
     if(capturing) {
-      if(skippingAt == captureSkip) {
-        // We need to send this frame
-        Message::Header hdr(Message::Image, Message::Image.SendImage,
-                            wcam, itype, res, msgs,
-                            imgBuf.len);
-
-        debug << "Sending an image as an event " << std::endl;
-        intf.Send(hdr, imgBuf.addr, imgBuf.len);
-      }
-
-      if(++skippingAt > captureSkip) skippingAt = 0;
+      // We need to send this frame
+      Message::Header hdr(Message::Image, Message::Image.SendImage,
+                          wcam, itype, res, msgs,
+                          imgBuf.len);
+      
+      debug << "Sending an image as an event " << std::endl;
+      intf.Send(hdr, imgBuf.addr, imgBuf.len);
     }
 
     // See if we have a one shot we need to capture

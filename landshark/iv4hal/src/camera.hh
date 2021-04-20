@@ -6,6 +6,7 @@
 #include <vector>
 #include <tuple>
 #include <map>
+#include <pthread.h>
 
 #include "message.hh"
 #include "socket_interface.hh"
@@ -13,6 +14,16 @@
 
 namespace iv4 {
   // TODO: This is kind of ugly.  Is there a way to handle typed enum's as bitfields?
+  typedef struct BufferInfo_t {
+    uint8_t *buf;
+    uint8_t *dest;
+    int width,    height;
+    int widthDest,heightDest;
+    int destLen;
+    int index;
+    bool ready;
+  } BufferInfo;
+
   enum class ImageType {
     UYVY = 0x0001,
     RGB  = 0x0002,
@@ -105,10 +116,14 @@ namespace iv4 {
     }
     
   private:
+    void ProcessBuffer(uint8_t *in);
+    bool DropFrame();
+
     // The width and height of our capture device
     //  TODO: We can query the v4l2 dev node to get this information
     int _width, _height;
-
+    int _width_2, _height_2;
+    
     // The path to our video device 
     std::string _vdev;
     int devNum;
@@ -125,10 +140,10 @@ namespace iv4 {
     // We can set the camera to capture mode, where it will capture all the images
     //  that are available
     bool capturing;                       // Are we capturing images
-    int captureSkip;                      // How many images to skip before sending one
-    int skippingAt;                       // How many images we have skipped so far
+    //int captureSkip;                      // How many images to skip before sending one
+    //int skippingAt;                       // How many images we have skipped so far
     std::vector<ImageType> captureTypes;  // The Types of images we are supposed to be capturing
-
+    
     // We also allow the capture of a single image.  We store that image until a new one is captured
     bool oneshot;                         // True if we want to capture only one image, then stop
     std::vector<ImageType> oneshotTypes;
@@ -136,7 +151,7 @@ namespace iv4 {
 
     // user dma buffers
     uint8_t *udma_addr;
-    size_t udma_len;
+    size_t udma_len;    
     
     // Our v4l2 video buffers
     struct cambuf {
@@ -144,7 +159,10 @@ namespace iv4 {
       size_t len;
       int fd; // for dma purposes
     };
-    std::vector<cambuf> buffers;    
+    std::vector<cambuf> buffers;
+
+    uint8_t *dest;
+    uint32_t destLen;
   }; // end CameraInterface
 }; // end namespace
 #endif

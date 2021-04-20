@@ -111,21 +111,27 @@ int main(int argc, char ** argv) {
       std::get<0>(res0) << "," <<  std::get<1>(res0) << std::endl;
 
     std::tuple<int,int> res1 = CameraInterface::InitializeBaslerCamera(1);
-    cameras.push_back(CameraInterface("/dev/video1",
-                                      1,
-                                      std::get<0>(res1),
-                                      std::get<1>(res1)));    
-    debug << Debug::Mode::Info << "Initialized /dev/video1 " << (void*)&cameras.back() << "with resolution " <<
-      std::get<0>(res1) << "," <<  std::get<1>(res1) << std::endl;
+    if(std::get<0>(res1) == 0 || std::get<1>(res1) == 0) {
+      debug << Debug::Mode::Info << "Failed to initialize second camera" << std::endl;
+    } else { 
+      cameras.push_back(CameraInterface("/dev/video1",
+                                        1,
+                                        std::get<0>(res1),
+                                        std::get<1>(res1)));    
+      debug << Debug::Mode::Info << "Initialized /dev/video1 " << (void*)&cameras.back() << "with resolution " <<
+        std::get<0>(res1) << "," <<  std::get<1>(res1) << std::endl;
+    }
   }
 
   ChillUPSInterface *cups = nullptr;
   if(use_cups) {
+    debug << "Initializing CUPS" << std::endl;
     cups = new ChillUPSInterface("/dev/i2c-2");
   }
 
   DSBInterface *dsb = nullptr;
   if(use_dsb) {
+    debug << "Initializing DSBs" << std::endl;
     dsb = new DSBInterface("/dev/ttyUSB0", update_freq);
   }
 
