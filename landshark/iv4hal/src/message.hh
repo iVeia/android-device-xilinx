@@ -266,7 +266,10 @@ namespace iv4 {
       */
       constexpr static uint8_t SetFactoryMode      = 0x14;
       //! Clear drawer indices
-      constexpr static uint8_t ClearDrawerIndices  = 0x16;
+      /*!
+        imm[0] : Override value for the form 0x4F5644<override_value>
+      */
+        constexpr static uint8_t ClearDrawerIndices  = 0x16;
       //! Assign drawer index
       /*! 
         imm[0] : Index
