@@ -132,7 +132,7 @@ int main(int argc, char ** argv) {
   DSBInterface *dsb = nullptr;
   if(use_dsb) {
     debug << "Initializing DSBs" << std::endl;
-    dsb = new DSBInterface("/dev/ttyUSB0", update_freq);
+    dsb = new DSBInterface("/dev/ttyPS1", update_freq);
   }
 
   SocketInterface eventServer([] (const Message &msg) {
@@ -241,7 +241,8 @@ int main(int argc, char ** argv) {
           //TODO: Roll this into its own class/handler
           if(message.header.subType == Message::Hardware.SetLights) {
             uint8_t lightsVal = (int)message.header.imm[0];
-            if(lightsVal < 20) lightsVal = 20;
+            if(lightsVal < 0x60) lightsVal = 0;
+            if(lightsVal > 0xE0) lightsVal = 0xE0;
             debug << "Setting pot to " << std::hex << lightsVal <<
               std::dec << std::endl;
             SetPot("/dev/i2c-0", 0x2C, lightsVal);

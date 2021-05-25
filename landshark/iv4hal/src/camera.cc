@@ -154,6 +154,7 @@ namespace iv4 {
   }
 
   std::tuple<int,int> CameraInterface::InitializeBaslerCamera(int mediaDevNum) {
+    debug << "Trying to initialize Basler camera " << mediaDevNum << std::endl;
     std::string mediaSubDev = "";
     if(mediaDevNum == 0) {
       mediaSubDev = "/dev/v4l-subdev1";      
@@ -165,6 +166,7 @@ namespace iv4 {
     }
 
     // First we have to get the type of camera that is plugged in
+    debug << "Opening " << mediaSubDev << std::endl;
     struct basler_device_information binfo;
     int iret = basler_get_info(mediaSubDev, &binfo);
     std::string camModel = std::string( (char*)binfo.modelName);
@@ -212,7 +214,7 @@ namespace iv4 {
 
     // TODO: Maybe look the names of the media devices up using v4l2 APIs?
     if(mediaDevNum == 0) {
-      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"iveia-basler-mipi 7-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"iveia-basler-mipi 3-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
       RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
       RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
       RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0030000.iveia_scaler\":0 [fmt:"+format+"/"+(width_2)+"x"+(height_2)+" field:none]'");

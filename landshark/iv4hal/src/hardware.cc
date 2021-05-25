@@ -14,16 +14,20 @@ namespace iv4 {
   //TODO: Refactor I2C into a supporting library / object with RAII/auto-closing destructor
   inline bool i2c_read_reg(std::string dev,
                            uint8_t addr,
+                           uint8_t reg,
                            uint8_t *val) {
     int i2cfd = open(dev.c_str(), O_RDWR);
     if(i2cfd < 0) return false;
 
+    uint8_t obuf[] = {reg};
+
     struct i2c_msg msgs[] = {
-      {addr, I2C_M_RD, 1, val},
+      {addr, 0, 1, obuf},
+      {addr, I2C_M_RD | I2C_M_NOSTART, 1, val},
     };
 
     int ret = -2;
-    struct i2c_rdwr_ioctl_data ioctl_data = { &msgs[0], 1 };
+    struct i2c_rdwr_ioctl_data ioctl_data = { &msgs[0], 2 };
     ret = ioctl(i2cfd, I2C_RDWR, &ioctl_data);
     
     close(i2cfd);
@@ -37,6 +41,7 @@ namespace iv4 {
 
   static inline bool i2c_write(std::string dev,
                                uint8_t addr,
+                               uint8_t reg,
                                uint8_t val) {
 
     int i2cfd = open(dev.c_str(), O_RDWR);
@@ -44,7 +49,7 @@ namespace iv4 {
 
     int ret;
 
-    uint8_t dat[] = {0, val};
+    uint8_t dat[] = {reg, val};
 
     struct i2c_msg msgs[] = {
       {addr, 0, 2, dat},
@@ -64,7 +69,7 @@ namespace iv4 {
 
   uint8_t GetPot(std::string dev, uint8_t addr) {
     uint8_t val = 43;
-    bool ret = i2c_read_reg(dev, addr, &val);
+    bool ret = i2c_read_reg(dev, addr, 0x18, &val);
 
     if(ret) return val;
     else {
@@ -75,7 +80,7 @@ namespace iv4 {
   
   bool SetPot(std::string dev, uint8_t addr, uint8_t val) {
     debug << "Setting pot to " << std::hex << (int)val << std::dec << std::endl;
-    return i2c_write(dev, addr, val);
+    return i2c_write(dev, addr, 0x18, val);
   }
 
 };
