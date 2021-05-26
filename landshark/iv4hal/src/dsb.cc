@@ -112,7 +112,11 @@ std::unique_ptr<Message> DSBInterface::ProcessMessage(const Message &msg) {
 
   case Message::DSB.ClearDrawerIndices:
     {
-      success = clearDrawerIndices();
+      uint8_t override_val = 0;
+      if((msg.header.imm[0] & 0xFFFFFF00) == 0x4F564400) {
+        override_val = msg.header.imm[0] & 0x000000FF;
+      }
+      success = clearDrawerIndices(override_val);
     }
     break;
 
@@ -552,21 +556,21 @@ bool DSBInterface::discover() {
     
     // Check the address against the device type
     uint8_t dtype = rmsg[0] & 0x0F;
-    if(dtype == 3) {
-      // DSB one and three drawer
+    if(dtype == 3 || dtype == 2) {
+      // DSB two and three drawer
       if(addr >= 14 || addr <= 0) {
-        debug << "DSB at wrong address: " << (int)addr << std::endl;
+        debug << Debug::Mode::Err << "DSB at wrong address: " << (int)addr << std::endl;
         continue;
       }
     } else if(dtype == 7 && addr != 14) { // CUPS
-      debug << "CUPS at wrong address: " << (int)addr << std::endl;
+      debug << Debug::Mode::Err << "CUPS at wrong address: " << (int)addr << std::endl;
       continue;
     } else {
-      debug << "Unknown device type: " << (int)dtype << std::endl;
+      debug << Debug::Mode::Err << "Unknown device type: " << (int)dtype << std::endl;
       continue;
     }
     
-    if(dtype == 3) {
+    if(dtype == 3 || dtype == 2) {
       // If we are here a DSB responded at address <addr>
       DSB dsb;
       dsb.errors = 0;
@@ -698,20 +702,23 @@ bool DSBInterface::getDebugData(uint8_t dsb_index, std::string &ret) {
     //{"crc_errors", 3},
     //{"framing_errors", 4},
 
-    {"Sensor0_OSC_offset",  6},
-    {"Sensor0_OSC_value",   9},
-    {"Sensor0_OSC_adj",    12},
-    {"Sensor0_DAC_value",  15},
-    {"\n",                251},
-    {"Sensor1_OSC_offset",  7},
-    {"Sensor1_OSC_value",  10},
-    {"Sensor1_OSC_adj",    13},
-    {"Sensor1_DAC_value",  16},
-    {"\n",                251},
-    {"Sensor2_OSC_offset",  8},
-    {"Sensor2_OSC_value",  11},    
-    {"Sensor2_OSC_adj",    14},
-    {"Sensor2_DAC_value",  17},
+    {"S0_OSC_offset",  6},
+    {"S0_OSC_val",     9},
+    {"S0_OSC_adj",    12},
+    {"S0_DAC_val",    15},
+    {"S0_trip_val",   18},
+    {"\n",           251},
+    {"S1_OSC_offset",  7},
+    {"S1_OSC_val",    10},
+    {"S1_OSC_adj",    13},
+    {"S1_DAC_val",    16},
+    {"S1_trip_val",   19},
+    {"\n",           251},
+    {"S2_OSC_offset",  8},
+    {"S2_OSC_val",    11},    
+    {"S2_OSC_adj",    14},
+    {"S2_DAC_val",    17},
+    {"S2_trip_val",   20},
   };
      
   ret = "";
@@ -768,10 +775,10 @@ bool DSBInterface::getDebugData(uint8_t dsb_index, std::string &ret) {
   return true;
 }
 
-bool DSBInterface::clearDrawerIndices() {
+bool DSBInterface::clearDrawerIndices(uint8_t override_val) {
   // LS4 issues a global lock, global solenoid disable, and global proximity disable to all DSB nodes
   //   to ensure they do not report MT99 (on drawer change) during discovery
-  std::vector<uint8_t> msg {0x00};
+  std::vector<uint8_t> msg {override_val};
   if(!send(BROADCAST_ADDRESS, CLEAR_INDICES_TYPE, false, msg)) {
     debug << "Failed to send clear indices broadcast" << std::endl;
     return false;
@@ -848,12 +855,13 @@ bool DSBInterface::getDrawerTemps() {
         continue;
       }
 
-      if(rmsg.size() != 1) {
+      if(rmsg.size() != 2) {
         debug << "get temp returned " << rmsg.size() << " bytes" << std::endl;
         continue;
       }
 
       dsb.temperature = static_cast<char>(rmsg[0]);
+      dsb.voltage = static_cast<uint8_t>(rmsg[1]);
     }        
   }
 

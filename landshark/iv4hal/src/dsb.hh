@@ -44,6 +44,7 @@ namespace iv4 {
       
       bool bootLoaderMode;
       char temperature; // signed 8-bit temp
+      uint8_t voltage;     // unsigned 8-bit voltage (in 0.1V increments)
 
       uint8_t status_byte;
       bool    errors;
@@ -79,7 +80,7 @@ namespace iv4 {
     bool setFactoryMode(bool state);
     bool getDebugData(uint8_t dsb_index, std::string &ret);
 
-    bool clearDrawerIndices();
+    bool clearDrawerIndices(uint8_t override_val);
     bool assignDrawerIndex(uint8_t index);
 
     bool getDrawerStatus();
