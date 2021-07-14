@@ -7,6 +7,7 @@
 #include <tuple>
 #include <map>
 #include <pthread.h>
+#include <ctime>
 
 #include "message.hh"
 #include "socket_interface.hh"
@@ -95,7 +96,13 @@ namespace iv4 {
     bool StreamOn();       // Send STREAMON to v4l2 system
     bool DeInitializeV4L2();
     bool StreamOff();      // Send STREAMOFF to v4l2 system
-          
+
+    void SetupStream(bool stream, bool to_send, int which_cam);
+    bool sending_image_event;
+    int which_cam_number;
+
+
+    inline bool Resettable(bool r) {resettable = r; return resettable;}
     
     inline bool IsGood() const { return _camfd >= 0; }
     
@@ -163,6 +170,12 @@ namespace iv4 {
 
     uint8_t *dest;
     uint32_t destLen;
+
+    // Used to reset the pipeline on occasion
+    int resettingPipeline;
+    bool resettable;
+    time_t streamingOnLast;
+    time_t resettingStart;
   }; // end CameraInterface
 }; // end namespace
 #endif

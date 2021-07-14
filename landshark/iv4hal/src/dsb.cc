@@ -113,6 +113,8 @@ std::unique_ptr<Message> DSBInterface::ProcessMessage(const Message &msg) {
   case Message::DSB.ClearDrawerIndices:
     {
       uint8_t override_val = 0;
+      debug << "Clear message: " << std::hex << (msg.header.imm[0] & 0xFFFFFF00) <<
+        std::dec << std::endl;
       if((msg.header.imm[0] & 0xFFFFFF00) == 0x4F564400) {
         override_val = msg.header.imm[0] & 0x000000FF;
       }
@@ -685,7 +687,8 @@ bool DSBInterface::setFactoryMode(bool state) {
 bool DSBInterface::getDebugData(uint8_t dsb_index, std::string &ret) {
   if(dsb_index >= dsbs.size()) {
     debug << "Index is " << (int)dsb_index << " max is " << dsbs.size() << std::endl;
-    return false;
+    ret = std::string("Index is ") + std::to_string( (int)dsb_index) + ".  Max index is " + std::to_string(dsbs.size());
+    return true;
   }
   
   uint8_t addr = dsbs[dsb_index].address;
@@ -779,6 +782,7 @@ bool DSBInterface::clearDrawerIndices(uint8_t override_val) {
   // LS4 issues a global lock, global solenoid disable, and global proximity disable to all DSB nodes
   //   to ensure they do not report MT99 (on drawer change) during discovery
   std::vector<uint8_t> msg {override_val};
+  debug << "Clearing indices: " << (int)override_val << std::endl;
   if(!send(BROADCAST_ADDRESS, CLEAR_INDICES_TYPE, false, msg)) {
     debug << "Failed to send clear indices broadcast" << std::endl;
     return false;

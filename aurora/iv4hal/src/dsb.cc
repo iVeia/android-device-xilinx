@@ -112,7 +112,9 @@ std::unique_ptr<Message> DSBInterface::ProcessMessage(const Message &msg) {
 
   case Message::DSB.ClearDrawerIndices:
     {
-      success = clearDrawerIndices();
+      debug << "Trip override value: " << std::hex << msg.header.imm[0] << std::dec << std::endl;
+      uint8_t new_trip = static_cast<uint8_t>(msg.header.imm[0]);
+      success = clearDrawerIndices(new_trip);
     }
     break;
 
@@ -769,10 +771,11 @@ bool DSBInterface::getDebugData(uint8_t dsb_index, std::string &ret) {
   return true;
 }
 
-bool DSBInterface::clearDrawerIndices() {
+bool DSBInterface::clearDrawerIndices(uint8_t new_trip) {
   // LS4 issues a global lock, global solenoid disable, and global proximity disable to all DSB nodes
   //   to ensure they do not report MT99 (on drawer change) during discovery
-  std::vector<uint8_t> msg {0x00};
+  std::vector<uint8_t> msg {new_trip};
+  debug << "Clearing indices with trip value: " << (int)new_trip << std::endl;
   if(!send(BROADCAST_ADDRESS, CLEAR_INDICES_TYPE, false, msg)) {
     debug << "Failed to send clear indices broadcast" << std::endl;
     return false;

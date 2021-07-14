@@ -65,6 +65,7 @@ int main(int argc, char ** argv) {
   bool use_dsb  = true;
   bool init_on_start = false;
   unsigned int update_freq = 1;
+  bool usbrs485 = false;
   for(int i = 1; i < argc; i++) {
     if(std::string(argv[i]) == "-s") simulate = true;
 
@@ -82,6 +83,7 @@ int main(int argc, char ** argv) {
     else if(std::string(argv[i]) == "--cam=0") use_cam = false;
     else if(std::string(argv[i]) == "--cups=0") use_cups = false;
     else if(std::string(argv[i]) == "--dsb=0") use_dsb = false;
+    else if(std::string(argv[i]) == "--urs485") usbrs485 = true;
   }
 
   debug << Debug::Mode::Debug << "Debug statements visible" << std::endl;
@@ -91,6 +93,11 @@ int main(int argc, char ** argv) {
 
   debug << Debug::Mode::Info << "Update frequency = " << update_freq << std::endl;
   
+  RunCommand("echo 420 > /sys/class/gpio/export");
+  RunCommand("echo out > /sys/class/gpio/gpio420/direction");
+  RunCommand("echo 0 > /sys/class/gpio/gpio420/value");
+  
+  
   bool initialized = false;
 
   // Create all our cameras -
@@ -98,31 +105,32 @@ int main(int argc, char ** argv) {
   //   TODO: Add a string identifier to each camera?
   //             Not sure if that is really needed as this is a very specific application and doesn't
   //             reeally need to be generic
-  std::vector<CameraInterface> cameras;
+  std::vector<CameraInterface*> cameras;
 
   if(use_cam) {
-    // Camera0 First
-    std::tuple<int,int> res0 = CameraInterface::InitializeBaslerCamera(0);
-    cameras.push_back(CameraInterface("/dev/video0",
-                                      0,
-                                      std::get<0>(res0),
-                                      std::get<1>(res0)));    
-    debug << Debug::Mode::Info << "Initialized /dev/video0 " << (void*)&cameras.back() << "with resolution " <<
-      std::get<0>(res0) << "," <<  std::get<1>(res0) << std::endl;
-
-    std::tuple<int,int> res1 = CameraInterface::InitializeBaslerCamera(1);
-    if(std::get<0>(res1) == 0 || std::get<1>(res1) == 0) {
-      debug << Debug::Mode::Info << "Failed to initialize second camera" << std::endl;
-    } else { 
-      cameras.push_back(CameraInterface("/dev/video1",
-                                        1,
-                                        std::get<0>(res1),
-                                        std::get<1>(res1)));    
-      debug << Debug::Mode::Info << "Initialized /dev/video1 " << (void*)&cameras.back() << "with resolution " <<
+    {
+      // Camera0 First
+      std::tuple<int,int> res0 = CameraInterface::InitializeBaslerCamera(0);
+      cameras.push_back(new CameraInterface("/dev/video0",
+                                            0,
+                                            std::get<0>(res0),
+                                            std::get<1>(res0)));
+      cameras.back()->Resettable(true);
+      debug << Debug::Mode::Info << "Initialized /dev/video0 " << (void*)cameras.back() << "with resolution " <<
+        std::get<0>(res0) << "," <<  std::get<1>(res0) << std::endl;
+    }
+    {
+      // Video1 is the sobel transformed image
+      std::tuple<int,int> res1 = CameraInterface::InitializeBaslerCamera(1);
+      cameras.push_back(new CameraInterface("/dev/video1",
+                                            1,
+                                            std::get<0>(res1),
+                                            std::get<1>(res1)));    
+      debug << Debug::Mode::Info << "Initialized /dev/video1 " << (void*)cameras.back() << "with resolution " <<
         std::get<0>(res1) << "," <<  std::get<1>(res1) << std::endl;
     }
   }
-
+  
   ChillUPSInterface *cups = nullptr;
   if(use_cups) {
     debug << "Initializing CUPS" << std::endl;
@@ -131,17 +139,33 @@ int main(int argc, char ** argv) {
 
   DSBInterface *dsb = nullptr;
   if(use_dsb) {
-    debug << "Initializing DSBs" << std::endl;
-    dsb = new DSBInterface("/dev/ttyPS1", update_freq);
+    std::string ddev = "/dev/ttyPS1";
+    if(usbrs485) ddev = "/dev/ttyUSB0";
+
+    debug << "Initializing DSBs: " << ddev << std::endl;
+
+    dsb = new DSBInterface(ddev, update_freq);
   }
 
   SocketInterface eventServer([] (const Message &msg) {
     //  What to do?  This interface is for sending async events to the client
     //  We should not be getting messages on it...
   }, true, IV4HAL_EVENT_SOCK_NAME);
+
+
+  // Hack to know what cameras and stuff to turn on
+  bool cam0on=false, cam1on=false,
+    image0on=false, edge0on=false,
+    image1on=false, edge1on=false;
   
   // Create our listening socket
-  SocketInterface server([&server, &cameras, &initialized, cups, dsb, &eventServer](const Message &message) {
+  SocketInterface server([&server, &cameras, &initialized,
+                          cups, dsb,
+                          &cam0on, &cam1on,
+                          &image0on, &edge0on,
+                          &image1on, &edge1on,
+                          &eventServer](const Message &message) {
+      //TODO: Refactor some of this into functions
     debug << "Message received: " << message.header.toString() << std::endl;
     
     std::vector<std::unique_ptr<Message>> resp;
@@ -204,12 +228,87 @@ int main(int argc, char ** argv) {
       switch(message.header.type) {
       case Message::Image:
         {
-          debug << "Processing Image message" << std::endl;
-          int wcam = message.header.imm[0];
-          if(wcam >= (int)cameras.size()) {              
-            resp.push_back(Message::MakeNACK(message, 0, "Invalid camera"));
+          
+          if(message.header.subType == Message::Image.ContinuousCapture) {
+            int wcam = message.header.imm[0];
+            bool enable = (message.header.imm[2] == 1);
+            bool imm = ((message.header.imm[1] & 0x0001) != 0) ? (true) : (false);
+            bool edge = ((message.header.imm[1] & 0x0004) != 0) ? (true) : (false);            
+
+            if((message.header.imm[1] & 0x0001) != 0) {
+              if(wcam == 0) image0on = true;
+              if(wcam == 1) image1on = true;
+            } else {
+              if(wcam == 0) image0on = false;
+              if(wcam == 1) image1on = false;
+            }
+            if((message.header.imm[1] & 0x0004) != 0) {
+              if(wcam == 0) edge0on = true;
+              if(wcam == 1) edge1on = true;
+            } else {
+              if(wcam == 0) edge0on = false;
+              if(wcam == 1) edge1on = false;
+            }
+
+            if(enable) {
+              if(wcam == 0) {
+                cam0on = true;
+                cam1on = false;
+              }
+
+              if(wcam == 1) {
+                cam0on = false;
+                cam1on = true;
+              }
+            }
+            
+            debug << "Processing Image message -- continuous :: " <<
+              wcam << ":" << enable << ":" << imm << ":" << edge << "::" <<
+              cam0on << " - " << cam1on << " - " <<
+              image0on << ":" << image1on << " <> " << edge0on << ":" << edge1on <<
+              std::endl;
+            
+            // First we have to turn everything off
+            for(unsigned int i = 0; i < cameras.size(); i++) {
+              cameras[i]->SetupStream(false, false, 0);
+            }
+
+            usleep(1000);
+
+            // Then we have to switch the mux gpio
+            int cam_number = 0;
+            if(cam0on) {
+              cam_number = 0;
+              RunCommand("echo 0 > /sys/class/gpio/gpio420/value");
+            } else if(cam1on) {
+              cam_number = 1;
+              RunCommand("echo 1 > /sys/class/gpio/gpio420/value");
+            }
+            
+            usleep(1000);
+
+            if(cam0on || cam1on) {
+              // Then turn streaming back on -- for both cameras for now
+              for(unsigned int i = 0; i < cameras.size(); i++) {
+                bool tosend = false;
+                if(i == 0 && cam0on && image0on) tosend = true;
+                if(i == 0 && cam1on && image1on) tosend = true;
+                if(i == 1 && cam0on && edge0on) tosend = true;
+                if(i == 1 && cam1on && edge1on) tosend = true;
+
+                debug << "Setting up stream " << i << "::" << tosend << std::endl;
+                cameras[i]->SetupStream(true, tosend, cam_number);
+              }
+            }
+            resp.push_back(Message::MakeACK(message));
           } else {
-            resp.push_back(cameras[wcam].ProcessMessage(message));
+            debug << "Processing Image message -- other" << std::endl;
+            int wcam = message.header.imm[0];
+            if(wcam >= (int)cameras.size()) {              
+              resp.push_back(Message::MakeNACK(message, 0, "Invalid camera"));
+            } else {
+              resp.push_back(cameras[wcam]->ProcessMessage(message));
+            }
           }
         } // ------------ End case Message::Image ------------
         break;
@@ -299,6 +398,7 @@ int main(int argc, char ** argv) {
   // Our event loop
   bool done = false;
   bool doorSensor = false;
+  int doorSensorFailCount = 0;
   debug << "Entered event loop" << std::endl;
   while(!exiting) {
 
@@ -370,8 +470,8 @@ int main(int argc, char ** argv) {
     //       on the main communication thread
     // Always call the camera stuff regardless of the select return value
     //  If they don't have anything to do they just return as they are non-blocking
-    for(CameraInterface &cam : cameras) {
-      cam.ProcessMainLoop(eventServer);
+    for(CameraInterface *cam : cameras) {
+      cam->ProcessMainLoop(eventServer);
     }
 
     // Process CUPS next
@@ -402,7 +502,10 @@ int main(int argc, char ** argv) {
         }
         
       } else {
-        debug << "Failed to read ds" << std::endl;
+        if(doorSensorFailCount++ >= 50) {
+          debug << "Failed to read ds" << std::endl;
+          doorSensorFailCount = 0;
+        }
       }
     }
     

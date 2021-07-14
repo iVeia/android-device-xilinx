@@ -942,20 +942,22 @@ namespace iv4 {
   bool ChillUPSInterface::ProcessMainLoop(SocketInterface &intf) {
     time_t tnow = time(nullptr);
 
-    open();
     bool success = true;
     if((tLastFastUpdate > tnow) ||
        ((tnow - tLastFastUpdate) > chillupsFastUpdateFreq)) {
+      open();
       success |= updateMainStatus(intf);
       tLastFastUpdate = tnow;
+      close();
     }
 
     if((tLastSlowUpdate > tnow) ||
        ((tnow - tLastSlowUpdate) > chillupsSlowUpdateFreq)) {
+      open();
       success |= updateSlowStatus(intf);
       tLastSlowUpdate = tnow;
+      close();
     }
-    close();
     return success;
   }
   

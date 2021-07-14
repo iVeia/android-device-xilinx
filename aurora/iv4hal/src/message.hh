@@ -266,16 +266,17 @@ namespace iv4 {
       */
       constexpr static uint8_t SetFactoryMode      = 0x14;
       //! Clear drawer indices
+      /*!
+        imm[0] : Trip override value
+      */
       constexpr static uint8_t ClearDrawerIndices  = 0x16;
       //! Assign drawer index
       /*! 
         imm[0] : Index
       */
       constexpr static uint8_t AssignDrawerIndex   = 0x17;
-      //! Request calibration
-      /*!
-        imm[0] : 1 - Save, Anything else - don't save
-      */
+
+
       constexpr static uint8_t DrawerRecalibration = 0x1A;
       //! Get drawer states
       /*!

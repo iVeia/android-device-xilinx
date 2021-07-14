@@ -630,7 +630,7 @@ namespace iv4 {
         return false;
       }
     } else {
-      debug << "Got a frame from buffer " << buf.index << " on " << _camfd << std::endl;
+      //debug << "Got a frame from buffer " << buf.index << " on " << _camfd << std::endl;
     }
 
     // This is the buffer we are processing this time
@@ -649,7 +649,7 @@ namespace iv4 {
                             wcam, itype, res, msgs,
                             imgBuf.len);
 
-        debug << "Sending an image as an event " << std::endl;
+        //debug << "Sending an image as an event " << std::endl;
         intf.Send(hdr, imgBuf.addr, imgBuf.len);
       }
 

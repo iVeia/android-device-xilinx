@@ -159,11 +159,19 @@ namespace iv4 {
     if(mediaDevNum == 0) {
       mediaSubDev = "/dev/v4l-subdev1";      
     }  else if(mediaDevNum == 1) {
-      mediaSubDev = "/dev/v4l-subdev2";
+      mediaSubDev = "/dev/v4l-subdev4";
     } else {
       debug << Debug::Mode::Failure << "Media device " << mediaDevNum << " not known" << std::endl;
       return std::tuple<int,int>(0,0);
     }
+
+    int cameraType = 0;
+    std::string format = "";
+    std::string vformat = "";
+    std::string width = "";
+    std::string height = "";
+    std::string width_2 = "";
+    std::string height_2 = "";
 
     // First we have to get the type of camera that is plugged in
     debug << "Opening " << mediaSubDev << std::endl;
@@ -173,25 +181,18 @@ namespace iv4 {
     debug << "Got basler info: " << iret << std::endl <<
       "\t model:  " << (char*)binfo.modelName << std::endl <<
       "\t family: " << (char*)binfo.familyName << std::endl;
-
-    int cameraType = 0;
+    
     if(camModel.find("daA2500-60") != std::string::npos) cameraType = 1;
     else if(camModel.find("daA4200-30") != std::string::npos) cameraType = 2;
     else {
       debug << Debug::Mode::Failure << "Unrecognized camera type" << std::endl;
       return std::tuple<int,int>(0,0);
     }
-       
+    
     // Then we have to setup the resolution and format of the pipeline
     // TODO: This is hardcoded.  That is TERRIBLE.  This needs to be more
     //       generic / configurable when we have time.  If the cameras change locations, or the device
     //       tree moves dev nodes around this will fail horribly.
-    std::string format = "";
-    std::string vformat = "";
-    std::string width = "";
-    std::string height = "";
-    std::string width_2 = "";
-    std::string height_2 = "";
     switch(cameraType) {
     case 1:
       format = "UYVY8_1X16";
@@ -206,28 +207,32 @@ namespace iv4 {
       vformat = "UYVY";
       width = "4208";
       height = "3120";
+      width_2 = "2104";
+      height_2 = "1560";
       break;
     default:
       debug << Debug::Mode::Failure << "Unknown camera type! " << cameraType << std::endl;
       return std::tuple<int,int>(0,0);
     }    
 
-    // TODO: Maybe look the names of the media devices up using v4l2 APIs?
     if(mediaDevNum == 0) {
+      // TODO: Maybe look the names of the media devices up using v4l2 APIs?
       RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"iveia-basler-mipi 3-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
       RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
       RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0000000.mipi_csi2_rx_subsystem\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
-      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0030000.iveia_scaler\":0 [fmt:"+format+"/"+(width_2)+"x"+(height_2)+" field:none]'");
-      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0030000.iveia_scaler\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0041000.iveia_scaler\":0 [fmt:"+format+"/"+(width_2)+"x"+(height_2)+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media0 -V '\"a0041000.iveia_scaler\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
       RunCommand("/system/bin/v4l2-ctl -d /dev/video0 --set-fmt-video=width="+(width_2)+",height="+(height_2)+",pixelformat='"+vformat+"'");
     } else if(mediaDevNum == 1) {
-      RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"a0020000.mipi_csi2_rx_subsystem\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
-      RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"a0020000.mipi_csi2_rx_subsystem\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
-      RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"iveia-basler-mipi 8-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
-      RunCommand("/system/bin/v4l2-ctl -d /dev/video1 --set-fmt-video=width="+width+",height="+height+",pixelformat='"+vformat+"'");
+      // This is the edge detected image - monochrome
+      // TODO: Maybe look the names of the media devices up using v4l2 APIs?
+      RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"iveia-basler-mipi 4-0036\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"a0010000.mipi_csi2_rx_subsystem\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"a0010000.mipi_csi2_rx_subsystem\":0 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"a0041200.iveia1_scaler\":0 [fmt:Y8_1X8/"+(width_2)+"x"+(height_2)+" field:none]'");
+      RunCommand("/system/bin/media-ctl -d /dev/media1 -V '\"a0041200.iveia1_scaler\":1 [fmt:"+format+"/"+width+"x"+height+" field:none]'");
+      RunCommand("/system/bin/v4l2-ctl -d /dev/video1 --set-fmt-video=width="+(width_2)+",height="+(height_2)+",pixelformat='Y8_1X8'");
     }
-
-    // 
     
     switch(cameraType) {
     case 1:
@@ -242,7 +247,9 @@ namespace iv4 {
       // This should have been handled already
       break;
     }
-
+    
+    
+    
     return std::tuple<int,int>(0,0);
   }
 
@@ -251,6 +258,8 @@ namespace iv4 {
   void CameraInterface::PlaybackBaslerFile(std::string playbackFile, std::string mediaDev) {
     // Next we have to open our playback file and sent it to the camera
     std::ifstream playback(playbackFile.c_str());
+
+    debug << "Playing back " << playbackFile << " to " << mediaDev << std::endl;
 
     std::string line;
     int media_fd = open(mediaDev.c_str(), O_RDWR);
@@ -288,13 +297,32 @@ namespace iv4 {
         }
       }
     } // end while(getline)
+    
+    {
+      // Finally, turn off auto exposure
+      uint8_t addr[2] = {0x02, 0x50}; // 0x502 is the address to turn it off
+      uint8_t dat[2] = {0x02, 0x89}; // Taken from the trace (don't know what the values mean)
+      basler_write(media_fd, *((uint16_t*)addr), dat, 2);
+    }
 
     close(media_fd);
     playback.close(); // This will happen when scope closes, but do it anyway
     
   } // end Playback
 
-  
+  /*
+  CameraInterface::SetExposure(unsigned int level, std::string mediaDev) {
+    int media_fd = open(mediaDev.c_str(), O_RDWR);
+    
+    uint8_t addr[2] = {0x0C, 0x50}; // 0x50C is the address to set exposure level
+    uint8_t *dat = (uint8_t*)(&level);
+    basler_write(media_fd, *((uint16_t*)addr), dat, 4);    
+    
+    close(media_fd);
+  }
+  */
+
+
   CameraInterface::CameraInterface(const std::string &videoDev,
                                    int mediaDevNum,
                                    int width, int height) :
@@ -306,7 +334,29 @@ namespace iv4 {
     udma_addr = nullptr;
     devNum = mediaDevNum;
     streaming = false;
+    resettingPipeline = 0;
+    which_cam_number = 0;
+    sending_image_event = false;
   }
+
+  void CameraInterface::SetupStream(bool stream, bool to_send, int which_cam) {
+    sending_image_event = to_send;
+    which_cam_number = which_cam;
+    if(stream) {
+      // Enable capturing
+      //captureSkip = m.header.imm[3];
+      //if(captureSkip < 0) captureSkip = 0;
+      //captureSkip = 0;
+      if(!streaming) StreamOn();
+      capturing = true;
+    } else {
+      // disable capturing
+      capturing = false;
+      resettingPipeline = 0; // Make sure we aren't in the middle of a pipeline reset
+      StreamOff();
+    }
+  }
+  
 
   std::unique_ptr<Message> CameraInterface::ProcessMessage(const Message &m) {
     if(m.header.type != Message::Image) return Message::MakeNACK(m, 0, "Invalid message passed to CameraInterface");
@@ -325,6 +375,7 @@ namespace iv4 {
         } else {
           // disable capturing
           capturing = false;
+          resettingPipeline = 0; // Make sure we aren't in the middle of a pipeline reset
           StreamOff();
           captureTypes.clear();
         }
@@ -392,6 +443,7 @@ namespace iv4 {
     InitializeV4L2();
     
     streaming = true;
+    streamingOnLast = time(nullptr);
     return streaming;
   }
 
@@ -709,12 +761,39 @@ namespace iv4 {
   }
   
   bool CameraInterface::ProcessMainLoop(SocketInterface &intf) {
+    if(resettingPipeline > 0) {
+      resettingPipeline--;
+
+      debug << "Resetting: " << resettingPipeline << std::endl;
+
+      if(resettingPipeline == 0) {
+        debug << "Turning streaming back on" << std::endl;
+        StreamOn();
+        resettingPipeline = 0;
+      }
+      return true;
+    }
+    
     if(!IsGood()) {
       //debug << "Camera is not good in ProcessMainLoop: " << _camfd << ":" <<
       //(void*)this << std::endl;
       return true; // Not nescessarilly a problem, but might be
     }
-    
+
+    // First, we want to check if we need to reset the camera
+    if(streaming && resettable) {
+      time_t time_now = time(nullptr);
+      // Every 20 minutes
+      if((time_now - streamingOnLast) > (60 * 10)) {
+        resettingPipeline = 2;
+        resettingStart = time_now;
+        StreamOff();
+        
+        debug << "resetting pipeline -- it has been on for 20 minutes" << std::endl;
+        return true;
+      }
+    }
+
     // If we are not streaming, we may need to turn that on
     if(!streaming && capturing) {
       // This is an error, but don't exit because of it
@@ -766,17 +845,20 @@ namespace iv4 {
         return false;
       }
     } else {
-      debug << "Got a frame from buffer " << buf.index << " on " << _camfd << std::endl;
+      //debug << "Got a frame from buffer " << buf.index << " on " << _camfd << std::endl;
     }
 
     // This is the buffer we are processing this time
     struct cambuf &imgBuf = buffers[buf.index];
 
     // TODO: Support more image types here?
-    uint32_t wcam = devNum;
+    uint32_t wcam = which_cam_number;
     uint32_t res = ((_width_2<<16) & 0xFFFF0000) | (_height_2 & 0x0000FFFF);
     uint32_t msgs = 0x00010001; // At the moment we only send one message / image
+
+    // Camera0 is image, Camera1 is edge detection
     uint32_t itype = ToInt(ImageType::UYVY);
+    if(devNum == 1) itype = ToInt(ImageType::GRAY);
 
     if(capturing) {
       // We need to send this frame
@@ -784,28 +866,13 @@ namespace iv4 {
                           wcam, itype, res, msgs,
                           imgBuf.len);
       
-      debug << "Sending an image as an event " << std::endl;
-      intf.Send(hdr, imgBuf.addr, imgBuf.len);
-    }
-
-    // See if we have a one shot we need to capture
-    if(oneshot) {
-      // TODO: itype in the event message below is supposed to be a bitmask of image types we have captured
-      //       At the moment we only support raw UYVY, but we need to support more at some point
-      oneshotImages[ImageType::UYVY] = Image(_width, _height, imgBuf.addr, imgBuf.len, ImageType::UYVY);
-      intf.Send(Message(Message::Image, Message::Image.ImageCaptured,
-                        wcam, itype, 0, 0));      
-      oneshot = false;
-      
-      if(!capturing) {
-        // We have to turn streaming off if this was just a oneshot
-        StreamOff();
-      }
+      //debug << "Sending an image as an event " << std::endl;
+      if(sending_image_event) intf.Send(hdr, imgBuf.addr, imgBuf.len);
     }
 
     // Now we have to requeue the buffer
     if (-1 == xioctl(_camfd, VIDIOC_QBUF, &buf)) {
-      debug << "Failed to requeue buffer: " << strerror(errno) << std::endl;
+      debug << Debug::Mode::Failure << "Failed to requeue buffer: " << strerror(errno) << std::endl;
       return false;
     }
 
