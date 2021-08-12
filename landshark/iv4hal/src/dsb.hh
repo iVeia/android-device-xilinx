@@ -88,8 +88,8 @@ namespace iv4 {
     bool getErrors(DSB &dsb, std::vector<uint8_t> &errors);
 
     time_t discoverCountdown;
-    static const uint8_t RESET_DISCOVER_WAIT = 5; // Wait 5 seconds to re-discover
-                                                  //  after a reset    
+    static const uint8_t RESET_DISCOVER_WAIT = 10; // Wait 5 seconds to re-discover
+                                                   //  after a reset    
 
     struct DrawerEvent {
       uint8_t index;

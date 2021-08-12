@@ -300,9 +300,9 @@ namespace iv4 {
     
     {
       // Finally, turn off auto exposure
-      uint8_t addr[2] = {0x02, 0x50}; // 0x502 is the address to turn it off
-      uint8_t dat[2] = {0x02, 0x89}; // Taken from the trace (don't know what the values mean)
-      basler_write(media_fd, *((uint16_t*)addr), dat, 2);
+      //uint8_t addr[2] = {0x02, 0x50}; // 0x502 is the address to turn it off
+      //uint8_t dat[2] = {0x02, 0x89}; // Taken from the trace (don't know what the values mean)
+      //basler_write(media_fd, *((uint16_t*)addr), dat, 2);
     }
 
     close(media_fd);
@@ -337,16 +337,19 @@ namespace iv4 {
     resettingPipeline = 0;
     which_cam_number = 0;
     sending_image_event = false;
+    captureSkip = 0;
+    skippingAt = 0;
   }
 
-  void CameraInterface::SetupStream(bool stream, bool to_send, int which_cam) {
+  void CameraInterface::SetupStream(bool stream, bool to_send, int which_cam, int skip) {
     sending_image_event = to_send;
     which_cam_number = which_cam;
+
+    captureSkip = skip;
+    if(captureSkip < 0) captureSkip = 0;
+
     if(stream) {
       // Enable capturing
-      //captureSkip = m.header.imm[3];
-      //if(captureSkip < 0) captureSkip = 0;
-      //captureSkip = 0;
       if(!streaming) StreamOn();
       capturing = true;
     } else {
@@ -366,9 +369,9 @@ namespace iv4 {
       {
         if(m.header.imm[2] == 1) {
           // Enable capturing
-          //captureSkip = m.header.imm[3];
-          //if(captureSkip < 0) captureSkip = 0;
-          //captureSkip = 0;
+          captureSkip = m.header.imm[3];
+          if(captureSkip < 0) captureSkip = 0;
+
           captureTypes = GetImageTypes(m.header.imm[1]);
           if(!streaming) StreamOn();
           capturing = true;
@@ -860,15 +863,18 @@ namespace iv4 {
     uint32_t itype = ToInt(ImageType::UYVY);
     if(devNum == 1) itype = ToInt(ImageType::GRAY);
 
-    if(capturing) {
+    if(capturing && sending_image_event && (skippingAt == 0) ) {
       // We need to send this frame
       Message::Header hdr(Message::Image, Message::Image.SendImage,
                           wcam, itype, res, msgs,
                           imgBuf.len);
       
       //debug << "Sending an image as an event " << std::endl;
-      if(sending_image_event) intf.Send(hdr, imgBuf.addr, imgBuf.len);
+      intf.Send(hdr, imgBuf.addr, imgBuf.len);
+
     }
+    
+    if((++skippingAt) > captureSkip) skippingAt = 0;
 
     // Now we have to requeue the buffer
     if (-1 == xioctl(_camfd, VIDIOC_QBUF, &buf)) {

@@ -233,7 +233,9 @@ int main(int argc, char ** argv) {
             int wcam = message.header.imm[0];
             bool enable = (message.header.imm[2] == 1);
             bool imm = ((message.header.imm[1] & 0x0001) != 0) ? (true) : (false);
-            bool edge = ((message.header.imm[1] & 0x0004) != 0) ? (true) : (false);            
+            bool edge = ((message.header.imm[1] & 0x0004) != 0) ? (true) : (false);
+            int capture_skip = message.header.imm[3];
+
 
             if((message.header.imm[1] & 0x0001) != 0) {
               if(wcam == 0) image0on = true;
@@ -265,12 +267,13 @@ int main(int argc, char ** argv) {
             debug << "Processing Image message -- continuous :: " <<
               wcam << ":" << enable << ":" << imm << ":" << edge << "::" <<
               cam0on << " - " << cam1on << " - " <<
-              image0on << ":" << image1on << " <> " << edge0on << ":" << edge1on <<
+              image0on << ":" << image1on << " <> " << edge0on << ":" << edge1on << ":" <<
+              "skip-" << capture_skip <<              
               std::endl;
             
             // First we have to turn everything off
             for(unsigned int i = 0; i < cameras.size(); i++) {
-              cameras[i]->SetupStream(false, false, 0);
+              cameras[i]->SetupStream(false, false, 0, 0);
             }
 
             usleep(1000);
@@ -297,7 +300,7 @@ int main(int argc, char ** argv) {
                 if(i == 1 && cam1on && edge1on) tosend = true;
 
                 debug << "Setting up stream " << i << "::" << tosend << std::endl;
-                cameras[i]->SetupStream(true, tosend, cam_number);
+                cameras[i]->SetupStream(true, tosend, cam_number, capture_skip);
               }
             }
             resp.push_back(Message::MakeACK(message));

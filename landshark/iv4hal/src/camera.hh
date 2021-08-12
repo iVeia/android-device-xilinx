@@ -97,7 +97,7 @@ namespace iv4 {
     bool DeInitializeV4L2();
     bool StreamOff();      // Send STREAMOFF to v4l2 system
 
-    void SetupStream(bool stream, bool to_send, int which_cam);
+    void SetupStream(bool stream, bool to_send, int which_cam, int skip);
     bool sending_image_event;
     int which_cam_number;
 
@@ -147,8 +147,8 @@ namespace iv4 {
     // We can set the camera to capture mode, where it will capture all the images
     //  that are available
     bool capturing;                       // Are we capturing images
-    //int captureSkip;                      // How many images to skip before sending one
-    //int skippingAt;                       // How many images we have skipped so far
+    int captureSkip;                      // How many images to skip before sending one
+    int skippingAt;                       // How many images we have skipped so far
     std::vector<ImageType> captureTypes;  // The Types of images we are supposed to be capturing
     
     // We also allow the capture of a single image.  We store that image until a new one is captured
