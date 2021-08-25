@@ -248,11 +248,19 @@ namespace iv4 {
       constexpr static uint8_t SetBootLoaderMode   = 0x04;
       //! Reset all DSBs
       constexpr static uint8_t Reset               = 0x10;
+      //! Enumeration Event
+      /*!
+        imm[0] : Number of drawers found
+        payload: for each DSB found (4-bytes each):
+          <addr>:FW_VER:<d1_ndx>:<d2_ndx>:<d3_ndx>:<d4_ndx>
+          0:0:0:0:0:0
+      */
+      constexpr static uint8_t EnumerationEvent    = 0x11;
       //! Set global lock
       /*!
         imm[0] : Lock state.  0 => Off, anything else is on
         imm[1] : Solenoid state. 0 => Auto, anything else is manual
-      */      
+      */
       constexpr static uint8_t SetGlobalLock       = 0x12;
       //! Drawer override
       /*!
@@ -332,6 +340,7 @@ namespace iv4 {
         switch(sub) {
         case SetBootLoaderMode  : return "DSB::SetBootLoaderMode";
         case Reset              : return "DSB::Reset";
+        case EnumerationEvent   : return "DSB::EnumerationEvent";
         case SetGlobalLock      : return "DSB::SetGlobalLock";
         case DrawerOverride     : return "DSB::DrawerOverride";
         case SetFactoryMode     : return "DSB::SetFactoryMode";

@@ -9,6 +9,7 @@
 
 #include "iv4_hal.hh"
 
+#include "rs485.hh"
 #include "debug.hh"
 #include "socket_interface.hh"
 #include "support.hh"
@@ -131,21 +132,27 @@ int main(int argc, char ** argv) {
     }
   }
   
+  std::string ddev = "/dev/ttyPS1";
+  if(usbrs485) ddev = "/dev/ttyUSB0";
+  
+  debug << "Initializing RS485: " << ddev << std::endl;
+  RS485Interface *rs485 = new RS485Interface(ddev);
+  
   ChillUPSInterface *cups = nullptr;
   if(use_cups) {
     debug << "Initializing CUPS" << std::endl;
     cups = new ChillUPSInterface("/dev/i2c-2");
   }
 
+  
   DSBInterface *dsb = nullptr;
   if(use_dsb) {
-    std::string ddev = "/dev/ttyPS1";
-    if(usbrs485) ddev = "/dev/ttyUSB0";
+    debug << "Initializing DSBs: " << rs485 << std::endl;
 
-    debug << "Initializing DSBs: " << ddev << std::endl;
-
-    dsb = new DSBInterface(ddev, update_freq);
+    dsb = new DSBInterface(rs485, update_freq);
   }
+
+  rs485->SetInterfaces(dsb);
 
   SocketInterface eventServer([] (const Message &msg) {
     //  What to do?  This interface is for sending async events to the client
@@ -468,6 +475,11 @@ int main(int argc, char ** argv) {
       }
     }
 
+    if(rs485 != nullptr) {
+      // Always run this -- even when not initialized
+      rs485->ProcessMainLoop();
+    }
+    
     // Check to see if we have any cameras here that we need to process
     // TODO: Split this off into a new thread, that way we can reduce latency
     //       on the main communication thread
@@ -482,8 +494,8 @@ int main(int argc, char ** argv) {
       cups->ProcessMainLoop(eventServer);
     }
 
-    if(dsb != nullptr && initialized) {
-      dsb->ProcessMainLoop(eventServer);
+    if(dsb != nullptr) {
+      dsb->ProcessMainLoop(eventServer, initialized);
     }
 
     // Finally, check the door sensor
