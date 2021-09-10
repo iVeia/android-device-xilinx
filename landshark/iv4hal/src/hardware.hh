@@ -14,6 +14,10 @@ namespace iv4 {
   uint8_t GetPot(std::string dev, uint8_t addr);
   bool SetPot(std::string dev, uint8_t addr, uint8_t val);
 
+  uint8_t GetLED(bool pwm_leds);
+  bool SetLED(uint8_t lightsVal, bool pwm_leds);
+
+  
   class FDManager {
   public:
     explicit FDManager(const std::string &dev, int flags) {

@@ -26,7 +26,7 @@ DSBInterface::DSBInterface(RS485Interface *serial, unsigned int update_rate_s) {
 
   // Broadcast a reset to everyone listening at the start of the world -- this will include CUPS
   std::vector<uint8_t> msg {0x00};
-  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::GLOBAL_RESET_TYPE, false, msg)) {
+  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::GLOBAL_RESET, false, msg)) {
     debug << Debug::Mode::Err << "Failed to broadcast reset during startup" << std::endl;
   }
 }
@@ -182,8 +182,6 @@ std::unique_ptr<Message> DSBInterface::ProcessMessage(const Message &msg) {
 bool DSBInterface::Initialize(SocketInterface &intf, bool send) {
   debug << Debug::Info::Time << "Initializing dsb subsystem" << std::endl;
 
-  //bool ret = discover();
-  
   return true;
 }
 
@@ -210,7 +208,7 @@ bool DSBInterface::discover() {
     // LS4 issues a global lock, global solenoid disable, and global proximity disable to all DSB nodes
     //   to ensure they do not report MT99 (on drawer change) during discovery
     std::vector<uint8_t> msg {0x00}; // disallow opening, disable solenoids, disable prox sensors
-    if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::GLOBAL_LOCK_TYPE, false, msg)) {
+    if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::DSB_GLOBAL_LOCK, false, msg)) {
       debug << "Failed to send disable message on discover" << std::endl;
     }
   }
@@ -220,7 +218,7 @@ bool DSBInterface::discover() {
   for(int addr = 1; addr < 14; addr++) {
     std::vector<uint8_t> msg {0x00};
     uint8_t raddr = addr;
-    uint8_t rtype = RS485Interface::DISCOVERY_TYPE;    
+    uint8_t rtype = RS485Interface::DISCOVERY;    
     RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
     if(ret != RS485Interface::RS485Return::Success) {
       debug << "Discovery failed for address " << raddr << std::endl;
@@ -312,7 +310,7 @@ bool DSBInterface::discover() {
 
   {
     std::vector<uint8_t> msg {0x07}; // allow opening, solenoids in auto mode, enable prox sensors
-    if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::GLOBAL_LOCK_TYPE, false, msg)) {
+    if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::DSB_GLOBAL_LOCK, false, msg)) {
       debug << "Failed to send disable message on discover" << std::endl;
     }
   }
@@ -326,7 +324,7 @@ bool DSBInterface::discover() {
 bool DSBInterface::drawerRecalibration(bool save) {
   uint8_t val = (save) ? (0x02) : (0x01);
   std::vector<uint8_t> msg {val};
-  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::DRAWER_RECALIBRATION_TYPE, false,  msg)) {
+  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::DSB_DRAWER_RECALIBRATION, false,  msg)) {
     debug << "Failed to send drawer recalibration " << save << " message" << std::endl;
     return false;
   }
@@ -340,7 +338,7 @@ bool DSBInterface::drawerOverride(uint8_t index, bool lock) {
   uint8_t val = index & 0x1F;
   if(!lock) val |= 0x20;
   std::vector<uint8_t> msg {val};
-  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::DRAWER_OVERRIDE_TYPE, false, msg)) {
+  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::DSB_DRAWER_OVERRIDE, false, msg)) {
     debug << "Failed to send drawer override command" << std::endl;
     return false;
   }
@@ -355,7 +353,7 @@ bool DSBInterface::setGlobalLockState(bool state, bool manual) {
   else val |= 0x04;    // auto mode
   
   std::vector<uint8_t> msg {val};
-  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::GLOBAL_LOCK_TYPE, false, msg)) {
+  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::DSB_GLOBAL_LOCK, false, msg)) {
     debug << "Failed to send set global lock broadcast" << std::endl;
     return false;
   }
@@ -368,7 +366,7 @@ bool DSBInterface::setGlobalLockState(bool state, bool manual) {
 bool DSBInterface::setFactoryMode(bool state) {
   uint8_t val = (state) ? (0x01) : (0x00);
   std::vector<uint8_t> msg {val};
-  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::FACTORY_MODE_TYPE, false, msg)) {
+  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::FACTORY_MODE, false, msg)) {
     debug << "Failed to send set factory mode broadcast" << std::endl;
     return false;
   }
@@ -427,15 +425,15 @@ bool DSBInterface::getDebugData(uint8_t dsb_index, std::string &ret) {
     
     std::vector<uint8_t> msg {dat.dat};
     uint8_t raddr = addr;
-    uint8_t rtype = RS485Interface::GET_DEBUG_TYPE;
+    uint8_t rtype = RS485Interface::DSB_GET_DEBUG;
     RS485Interface::RS485Return sret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
     if(sret != RS485Interface::RS485Return::Success) {
       debug << "Debug failed for address " << raddr << std::endl;
       return false;
     }
 
-    if(rtype != RS485Interface::GET_DEBUG_RETURN) {
-      debug << "incorrect return type: " << std::hex << (int)rtype << " != " << (int)RS485Interface::GET_DEBUG_RETURN <<
+    if(rtype != RS485Interface::DSB_GET_DEBUG_RETURN) {
+      debug << "incorrect return type: " << std::hex << (int)rtype << " != " << (int)RS485Interface::DSB_GET_DEBUG_RETURN <<
         std::dec << std::endl;
       return false;
     }
@@ -470,7 +468,7 @@ bool DSBInterface::clearDrawerIndices(uint8_t override_val) {
   //   to ensure they do not report MT99 (on drawer change) during discovery
   std::vector<uint8_t> msg {override_val};
   debug << "Clearing indices: " << (int)override_val << std::endl;
-  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::CLEAR_INDICES_TYPE, false, msg)) {
+  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::DSB_CLEAR_INDICES, false, msg)) {
     debug << "Failed to send clear indices broadcast" << std::endl;
     return false;
   }
@@ -484,7 +482,7 @@ bool DSBInterface::assignDrawerIndex(uint8_t index) {
   // Send the index value
   uint8_t val = index & 0x1F;
   std::vector<uint8_t> msg {val};
-  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::ASSIGN_INDEX_TYPE, false, msg)) {
+  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::DSB_ASSIGN_INDEX, false, msg)) {
     debug << "Failed to send set index broadcast" << std::endl;
     return false;
   }
@@ -495,7 +493,7 @@ bool DSBInterface::assignDrawerIndex(uint8_t index) {
 bool DSBInterface::setBootLoaderMode(bool enable) {
   uint8_t val = (enable)?(1):(0);
   std::vector<uint8_t> msg {val};
-  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::BOOTLOADER_MODE_TYPE, false, msg)) {
+  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::BOOTLOADER_MODE, false, msg)) {
     debug << "Failed to send bootloader mode broadcast" << std::endl;
     return false;
   }
@@ -506,7 +504,7 @@ bool DSBInterface::setBootLoaderMode(bool enable) {
 bool DSBInterface::globalReset() {
   // Clear everything out
   std::vector<uint8_t> msg {0x00};
-  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::GLOBAL_RESET_TYPE, false, msg)) {
+  if(!int_send(RS485Interface::BROADCAST_ADDRESS, RS485Interface::GLOBAL_RESET, false, msg)) {
     debug << "Failed to send global reset broadcast" << std::endl;
     return false;
   }
@@ -522,7 +520,7 @@ bool DSBInterface::getDrawerTemps() {
   for(DSB &dsb : dsbs) {
     std::vector<uint8_t> msg {0x00};
     uint8_t raddr = dsb.address;
-    uint8_t rtype = RS485Interface::GET_TEMP_TYPE;
+    uint8_t rtype = RS485Interface::DSB_GET_TEMP;
     RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
     if(ret != RS485Interface::RS485Return::Success) {
       debug << "Get drawer temps failed for address " << raddr << std::endl;
@@ -535,7 +533,7 @@ bool DSBInterface::getDrawerTemps() {
       continue;
     }
     
-    if(rtype != RS485Interface::GET_TEMP_RETURN) {
+    if(rtype != RS485Interface::DSB_GET_TEMP_RETURN) {
       debug << "Wrong type " << rtype << " in get temp return" << std::endl;
       continue;
     }
@@ -557,7 +555,7 @@ bool DSBInterface::getDrawerStatus() {
   for(DSB &dsb : dsbs) {
     std::vector<uint8_t> msg {0};
     uint8_t raddr = dsb.address;
-    uint8_t rtype = RS485Interface::GET_STATUS_TYPE;
+    uint8_t rtype = RS485Interface::DSB_GET_STATUS;
     RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
     if(ret != RS485Interface::RS485Return::Success) {
       debug << "Get drawer status failed for address " << raddr << std::endl;
@@ -570,7 +568,7 @@ bool DSBInterface::getDrawerStatus() {
       continue;
     }
     
-    if(rtype != RS485Interface::GET_STATUS_RETURN) {
+    if(rtype != RS485Interface::DSB_GET_STATUS_RETURN) {
       debug << "Wrong type " << rtype << " in get status return" << std::endl;
       continue;
     }
@@ -640,7 +638,7 @@ bool DSBInterface::getErrors(DSB &dsb, std::vector<uint8_t> &errors) {
   // Get the errors from a single DSB.  This clears the error log
     std::vector<uint8_t> msg {0x00};
     uint8_t raddr = dsb.address;
-    uint8_t rtype = RS485Interface::GET_ERRORS_TYPE;
+    uint8_t rtype = RS485Interface::DSB_GET_ERRORS;
     RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
     if(ret != RS485Interface::RS485Return::Success) {
       debug << "Get errors failed for address " << raddr << std::endl;
@@ -653,7 +651,7 @@ bool DSBInterface::getErrors(DSB &dsb, std::vector<uint8_t> &errors) {
       return false;
     }
     
-    if(rtype != RS485Interface::GET_ERRORS_RETURN) {
+    if(rtype != RS485Interface::DSB_GET_ERRORS_RETURN) {
       debug << "Wrong type " << rtype << " in get errors return" << std::endl;
       return false;
     }

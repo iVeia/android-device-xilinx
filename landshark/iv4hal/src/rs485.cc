@@ -304,7 +304,7 @@ RS485Interface::ReceiveSingleMessage(uint8_t &addr, uint8_t &type, std::vector<u
     } else if(avail > 0) {    
       uint8_t byte;
       int bread = read(fd, &byte, 1);
-      //debug << "(" << std::hex << (int)byte << "-" << (int)state << ")" << std::dec;
+      debug << "(" << std::hex << (int)byte << "-" << (int)state << ")" << std::dec;
       if(bread <= 0) {
         // Failed to read a byte
         debug << Debug::Mode::Err << "Failed to read a byte from serial port" << std::endl;
@@ -391,7 +391,7 @@ RS485Interface::ReceiveSingleMessage(uint8_t &addr, uint8_t &type, std::vector<u
     
     else if(timeoutMS == 0)  {
       // there is no data and our timeout is 0, so we will be timing out
-      //debug << ">a";
+      debug << ">a";
       return RS485Return::RecvTimeout;
     }
       
@@ -404,7 +404,7 @@ RS485Interface::ReceiveSingleMessage(uint8_t &addr, uint8_t &type, std::vector<u
 
     // If we timeout - reset the state machine
     if(delta_ms >= timeoutMS) {
-      //debug << ">b:" << seconds << ":" << useconds << ":" << delta_ms << ":";
+      debug << ">b:" << seconds << ":" << useconds << ":" << delta_ms << ":";
       return RS485Return::RecvTimeout;
     } else {
       usleep(500);

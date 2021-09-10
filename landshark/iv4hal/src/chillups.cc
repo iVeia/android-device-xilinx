@@ -9,19 +9,21 @@
 
 #include "chillups.hh"
 #include "debug.hh"
+#include "rs485.hh"
 
 
 namespace iv4 {
 #define SET_READ_WAIT_TIME (1000 * 100) // 100ms
-  ChillUPSInterface::ChillUPSInterface(std::string dev) :_dev(dev) {
+  ChillUPSInterface::ChillUPSInterface(RS485Interface *serial, const std::string &dev)
+    : _dev(dev), serial(serial) {
     i2cfd = -1;
     tLastFastUpdate = 0;
     tLastSlowUpdate = 0;
 
     lastMainStatusRead = false;
 
-    chillupsFastUpdateFreq = (10);      // Every 10s
-    chillupsSlowUpdateFreq = (60 * 2);  // Every 2m
+    chillupsFastUpdateFreq = (FAST_UPDATE_FREQ_S);
+    chillupsSlowUpdateFreq = (SLOW_UPDATE_FREQ_S);
   }
 
   ChillUPSInterface::~ChillUPSInterface() {
@@ -29,11 +31,14 @@ namespace iv4 {
   }
 
   bool ChillUPSInterface::opened() const {
-    return i2cfd >= 0;
+    return false;    
+    //return (i2cfd >= 0 || serial != nullptr);
   }
 
   bool ChillUPSInterface::open() {
-    i2cfd = ::open(_dev.c_str(), O_RDWR);
+    if(serial != nullptr) return true;
+    
+    i2cfd = ::open(_dev.c_str(), O_RDWR);    
     if(opened()) {
       debug << Debug::Mode::Debug << "CUPS opened " << _dev << std::endl;
       return true;
@@ -46,8 +51,11 @@ namespace iv4 {
 
   bool ChillUPSInterface::close() {
     if(!opened()) return false;
-    ::close(i2cfd);
-    i2cfd = -1;
+
+    if(i2cfd >= 0) {
+      ::close(i2cfd);
+      i2cfd = -1;
+    }
 
     return true;
   }
@@ -58,6 +66,7 @@ namespace iv4 {
     int ret;
     if(fd < 0) {
       debug << Debug::Mode::Warn << "Tried to write register " <<
+        std::hex << (int)addr << std::dec <<
         " when i2c is not open" << std::endl;
       return false;
     }
@@ -153,33 +162,153 @@ namespace iv4 {
     return std::make_tuple(ret, rval);
   }
 
- 
-  i2c_u8  ChillUPSInterface::getMainStatus() {
-    if(!opened()) {
-      debug  << Debug::Mode::Warn << "Tried to read main status register when i2c is not open" << std::endl;
-      return std::make_tuple(false, 0);
+
+  // -----------------------------------------------------------------
+  // -----------------------------------------------------------------
+  //  Start functions for reading chillups status
+  // -----------------------------------------------------------------
+  // -----------------------------------------------------------------
+  
+  bool ChillUPSInterface::getMainStatus(uint8_t &status_reg) {
+    bool success = false;
+    
+    if(serial != nullptr) {
+      uint8_t raddr = RS485Interface::CUPS_ADDRESS;
+      uint8_t rtype = RS485Interface::CUPS_GET_STATUS;
+      std::vector<uint8_t> msg {0x00};
+      RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
+      if(ret != RS485Interface::RS485Return::Success || msg.size() < 1) {
+        return false;
+      } else {
+        status_reg = msg[0];
+        success = true;
+      }
+    } else {
+      uint8_t regval = 0;
+      success = i2c_read_reg(i2cfd, 0x60, 0x00, &regval, 1, false);
+      if(success) {
+        status_reg = regval;
+        success = true;
+      }
     }
-
-    uint8_t regval = 0;
-    bool ret = i2c_read_reg(i2cfd, 0x60, 0x00, &regval, 1, false);
-
-    return std::make_tuple(ret, regval);
+    
+    return success;
   }
 
- 
+  bool ChillUPSInterface::readTemperatures() {
+    if(serial == nullptr) return false;
+
+    std::vector<uint8_t> msg {0x00};
+    uint8_t raddr = RS485Interface::CUPS_ADDRESS;
+    uint8_t rtype = RS485Interface::CUPS_GET_TEMPERATURE;
+    RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
+    if(ret != RS485Interface::RS485Return::Success) {
+      debug << "read temperatures failed for address " << raddr << std::endl;
+      return false;
+    }
+
+    if(rtype != RS485Interface::CUPS_GET_TEMPERATURE_RETURN) {
+      debug << Debug::Mode::Err << "read temperature returned wrong type: " << (int)rtype << std::endl;
+      return false;
+    }
+
+    uint16_t lastTemp = (msg[0] << 8) | (msg[1]);
+    lastThermistorTemp = lastTemp * 0.01f;
+
+    uint16_t lastCCTemp = (msg[2] << 8) | (msg[3]);
+    lastCalibratedColdCubeTemp = lastCCTemp * 0.01f;
+
+    uint16_t lastCATemp = (msg[4] << 8) | (msg[5]);
+    lastCalibratedAmbientTemp = lastCATemp * 0.01f;
+
+    return true;
+  }
+
+  bool ChillUPSInterface::readVoltages() {
+    if(serial == nullptr) return false;
+
+    std::vector<uint8_t> msg {0x00};
+    uint8_t raddr = RS485Interface::CUPS_ADDRESS;
+    uint8_t rtype = RS485Interface::CUPS_GET_VOLTAGE;
+    RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
+    if(ret != RS485Interface::RS485Return::Success) {
+      debug << "read voltages failed for address " << raddr << std::endl;
+      return false;
+    }
+
+    if(rtype != RS485Interface::CUPS_GET_VOLTAGE_RETURN) {
+      debug << Debug::Mode::Err << "read voltage returned wrong type: " << (int)rtype << std::endl;
+      return false;
+    }
+
+    lastChargePercent = msg[0] * 0.1f;
+    lastSupplyVoltage = msg[1] * 0.1f;
+
+    //lastSupply2Voltage = msg[2] * 0.1;
+    lastBackplaneVoltage = msg[2] * 0.1f;
+    
+    lastSupply3Voltage = msg[3] * 0.1f;
+    lastBatteryVoltage = msg[4] * 0.1f;
+
+    //lastBackplaneVoltage = msg[5] * 0.1;
+
+    lastOtherVoltage = msg[6] * 0.1f;
+    
+    
+    return true;
+  }
+
+  bool ChillUPSInterface::readPersistentParams() {
+    if(serial == nullptr) return false;
+
+    std::vector<uint8_t> msg {0x00};
+    uint8_t raddr = RS485Interface::CUPS_ADDRESS;
+    uint8_t rtype = RS485Interface::CUPS_GET_PSETTINGS;
+    RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
+    if(ret != RS485Interface::RS485Return::Success) {
+      debug << "read psettings failed for address " << raddr << "::" << (int)ret << std::endl;
+      return false;
+    }
+
+    if(rtype != RS485Interface::CUPS_GET_PSETTINGS_RETURN) {
+      debug << Debug::Mode::Err << "read psettings returned wrong type: " << (int)rtype << std::endl;
+      return false;
+    }
+
+    uint16_t temp_set = (msg[0] << 8) | msg[1];
+    lastSetPoint = temp_set * 0.01f;
+    uint8_t temp_range = msg[2];
+    lastTempRange = temp_range * 0.01f;
+    uint16_t defrost_period = (msg[3] << 8) | msg[4];
+    lastDefrostPeriod = defrost_period;
+    uint8_t defrost_duration = msg[5];
+    lastDefrostLength = defrost_duration;
+    uint16_t defrost_limit = (msg[6] << 8) | msg[7];
+    lastDefrostTempLimit = defrost_limit * 0.01;
+    
+    
+    return true;
+  }
+
   bool ChillUPSInterface::readThermistorTemp() {
-    i2c_i16 res = i2c_read_reg_i16(i2cfd, 0x64, 0x00);
-    bool ret = std::get<0>(res);
-    if(ret) {
-      lastThermistorTemp = std::get<1>(res) * 0.01;
-      debug << "Thermistor temp: " << lastThermistorTemp << "::" <<
-        std::hex << std::get<1>(res) << std::dec << std::endl;
+    bool ret = false;
+    if(serial != nullptr) {
+      ret = true;
+    } else {
+      i2c_i16 res = i2c_read_reg_i16(i2cfd, 0x64, 0x00);
+      ret = std::get<0>(res);
+      if(ret) {
+        lastThermistorTemp = std::get<1>(res) * 0.01;
+        debug << "Thermistor temp: " << lastThermistorTemp << "::" <<
+          std::hex << std::get<1>(res) << std::dec << std::endl;
+      }
     }
 
     return ret;
   }
  
   bool ChillUPSInterface::readDefrostPeriod() {
+    if(serial != nullptr) return true;
     i2c_u16 res = i2c_read_reg_u16(i2cfd, 0x64, 0x02);
     bool ret = std::get<0>(res);
 
@@ -205,7 +334,25 @@ namespace iv4 {
     return success;
   }
  
+  bool ChillUPSInterface::setDefrostParams(uint16_t period, uint8_t length, uint16_t limit) {
+    std::vector<uint8_t> msg {(uint8_t)((period>>8)&0xFF), (uint8_t)(period&0xFF),
+        length,
+        (uint8_t)((limit>>8)&0xFF), (uint8_t)(limit&0xFF),
+        0x00, 0x00, 0x00};
+    
+    if(!serial->Send(RS485Interface::CUPS_ADDRESS,
+                 RS485Interface::CUPS_SET_DEFROST, false, msg)) {
+      debug << "Failed to set defrost" << std::endl;
+    } else {
+      debug << "Set defrost to period " << period << " and length to " <<
+        (int)length << " and  limit to " << limit << std::endl;
+    }
+
+    return true;
+  }
+
   bool ChillUPSInterface::readChargePercent() {
+    if(serial != nullptr) return true;
     i2c_u8 res = i2c_read_reg_u8(i2cfd, 0x64, 0x04);
     bool ret = std::get<0>(res);
 
@@ -219,6 +366,7 @@ namespace iv4 {
   }
  
   bool ChillUPSInterface::readSupplyVoltage() {
+    if(serial != nullptr) return true;
     i2c_u8 res = i2c_read_reg_u8(i2cfd, 0x64, 0x05);
     bool ret = std::get<0>(res);
     if(ret) {
@@ -231,6 +379,7 @@ namespace iv4 {
   }
  
   bool ChillUPSInterface::readBatteryVoltage() {
+    if(serial != nullptr) return true;
     i2c_u8 res = i2c_read_reg_u8(i2cfd, 0x64, 0x06);
     bool ret = std::get<0>(res);
     if(ret) {
@@ -243,6 +392,7 @@ namespace iv4 {
   }
  
   bool ChillUPSInterface::readBackplaneVoltage() {
+    if(serial != nullptr) return true;
     i2c_u8 res = i2c_read_reg_u8(i2cfd, 0x64, 0x07);
     bool ret = std::get<0>(res);
     if(ret) {
@@ -255,6 +405,7 @@ namespace iv4 {
   }
  
   bool ChillUPSInterface::readOtherVoltage() {
+    if(serial != nullptr) return true;
     i2c_u8 res = i2c_read_reg_u8(i2cfd, 0x64, 0x08);
     bool ret = std::get<0>(res);
 
@@ -268,6 +419,8 @@ namespace iv4 {
   }
   
   bool ChillUPSInterface::readTempRange() {
+    if(serial != nullptr) return true;
+    
     i2c_u8 res = i2c_read_reg_u8(i2cfd, 0x64, 0x09);
     bool ret = std::get<0>(res);
 
@@ -293,6 +446,7 @@ namespace iv4 {
   }
   
   bool ChillUPSInterface::readSetPoint() {
+    if(serial != nullptr) return true;
     i2c_i16 res = i2c_read_reg_i16(i2cfd, 0x64, 0x0E);
     bool ret = std::get<0>(res);
 
@@ -305,6 +459,7 @@ namespace iv4 {
     return ret;
   }
   bool ChillUPSInterface::setSetPoint(float setPoint) {
+    if(serial != nullptr) return true;
     int16_t val = static_cast<int16_t>(setPoint * 100);
 
     std::vector<uint8_t> msg {0x0E,
@@ -319,12 +474,53 @@ namespace iv4 {
 
     return success;
   }
+
+  bool ChillUPSInterface::setTemperature(uint16_t temp, uint8_t range) {
+    std::vector<uint8_t> msg {(uint8_t)((temp>>8)&0xFF), (uint8_t)(temp&0xFF), range, 0x00};
+    debug << "Setting temp to " << temp << " and " << range << std::endl;
+    if(!serial->Send(RS485Interface::CUPS_ADDRESS,
+                 RS485Interface::CUPS_SET_TEMPERATURE, false, msg)) {
+      debug << "Failed to set temp and range" << std::endl;
+    } else {
+      debug << "Set temp to " << temp << " and range to " << range << std::endl;
+    }
+
+    return true;
+  }
+
   
-  i2c_u8  ChillUPSInterface::readCompressorError() {
-    return i2c_read_reg_u8(i2cfd, 0x64, 0x10);    
+  bool  ChillUPSInterface::readCompressorError(uint8_t &comp_error) {
+    if(serial != nullptr) {
+      uint8_t raddr = RS485Interface::CUPS_ADDRESS;
+      uint8_t rtype = RS485Interface::CUPS_GET_COMPR_ERROR;
+      std::vector<uint8_t> msg {0x00};
+      RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
+      if(ret != RS485Interface::RS485Return::Success || msg.size() < 1) {
+        debug << Debug::Mode::Err << "read compressor error return failed" << std::endl;
+        return false;
+      }
+
+      if(rtype != RS485Interface::CUPS_GET_COMPR_ERROR_RETURN) {
+        debug << Debug::Mode::Err << "read compressor error return type wrong" << std::endl;
+        return false;
+      }
+
+      comp_error = msg[0];
+      return true;
+
+    } else {
+      i2c_u8 err_reg = i2c_read_reg_u8(i2cfd, 0x64, 0x10);    
+      if(std::get<0>(err_reg)) {
+        comp_error = std::get<1>(err_reg);
+        return true;
+      }
+    }
+
+    return false;
   }
   
   bool ChillUPSInterface::readDefrostLength(){
+    if(serial != nullptr) return true;
     i2c_u8 res = i2c_read_reg_u8(i2cfd, 0x64, 0x12);
     bool ret = std::get<0>(res);
 
@@ -345,6 +541,7 @@ namespace iv4 {
   }
   
   bool ChillUPSInterface::readCompressorBackupState(){
+    if(serial != nullptr) return true;
     i2c_u8 res = i2c_read_reg_u8(i2cfd, 0x64, 0x13);
     bool ret = std::get<0>(res);
     uint8_t val = std::get<1>(res);
@@ -365,6 +562,7 @@ namespace iv4 {
   }
   
   bool ChillUPSInterface::readTempLoggingState(){
+    if(serial != nullptr) return true;
     i2c_u8 res = i2c_read_reg_u8(i2cfd, 0x64, 0x14);
     bool ret = std::get<0>(res);
     uint8_t val = std::get<1>(res);
@@ -386,6 +584,7 @@ namespace iv4 {
   }
   
   bool ChillUPSInterface::readDefrostTempLimit(){
+    if(serial != nullptr) return true;
     i2c_i16 res = i2c_read_reg_i16(i2cfd, 0x64, 0x16);
     bool ret = std::get<0>(res);
 
@@ -411,6 +610,7 @@ namespace iv4 {
   }
   
   bool ChillUPSInterface::readCalibratedColdCubeTemp(){
+    if(serial != nullptr) return true;
     i2c_i16 res = i2c_read_reg_i16(i2cfd, 0x64, 0x18);
     bool ret = std::get<0>(res);
 
@@ -422,6 +622,7 @@ namespace iv4 {
   }
   
   bool ChillUPSInterface::readCalibratedAmbientTemp(){
+    if(serial != nullptr) return true;
     i2c_i16 res = i2c_read_reg_i16(i2cfd, 0x64, 0x21);
     bool ret = std::get<0>(res);
 
@@ -433,6 +634,7 @@ namespace iv4 {
   }
   
   bool ChillUPSInterface::readVersion(){
+    if(serial != nullptr) return true;
     i2c_u8 res = i2c_read_reg_u8(i2cfd, 0x64, 0x11);
     bool ret = std::get<0>(res);
     uint8_t val = std::get<1>(res);
@@ -452,11 +654,32 @@ namespace iv4 {
   
   ChillUPSInterface::chillups_id  ChillUPSInterface::readColdCubeID(){
     chillups_id id;
-    uint8_t *idp = reinterpret_cast<uint8_t*>(&id);
-    bool ret = i2c_read_reg(i2cfd, 0x64, 0x1A, idp, sizeof(id), true);
 
-    if(!ret) {
-      // how to indicate failure here?
+    if(serial != nullptr) {
+      uint8_t raddr = RS485Interface::CUPS_ADDRESS;
+      uint8_t rtype = RS485Interface::CUPS_GET_CAL_PROBE_ID;
+      std::vector<uint8_t> msg {0x00};
+      RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
+      if(ret != RS485Interface::RS485Return::Success || msg.size() < 8) {
+        debug << Debug::Mode::Err << "read cold cube ID return failed" << std::endl;
+        return id;
+      }
+
+      if(rtype != RS485Interface::CUPS_GET_CAL_PROBE_ID_RETURN) {
+        debug << Debug::Mode::Err << "read cold cube ID return type wrong" << std::endl;
+        return id;
+      }
+
+      id.family = msg[1];
+      for(int i = 0; i < 6; i++) id.id[i] = msg[i + 2];
+      
+    } else {
+      uint8_t *idp = reinterpret_cast<uint8_t*>(&id);
+      bool ret = i2c_read_reg(i2cfd, 0x64, 0x1A, idp, sizeof(id), true);
+      
+      if(!ret) {
+        // how to indicate failure here?
+      }
     }
 
     return id;
@@ -464,17 +687,39 @@ namespace iv4 {
   
   ChillUPSInterface::chillups_id  ChillUPSInterface::readAmbientID(){
     chillups_id id;
-    uint8_t *idp = reinterpret_cast<uint8_t*>(&id);
-    bool ret = i2c_read_reg(i2cfd, 0x64, 0x23, idp, sizeof(id), true);
 
-    if(!ret) {
-      // how to indicate failure here?
+    if(serial != nullptr) {
+      uint8_t raddr = RS485Interface::CUPS_ADDRESS;
+      uint8_t rtype = RS485Interface::CUPS_GET_CAL_PROBE_ID;
+      std::vector<uint8_t> msg {0x01};
+      RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
+      if(ret != RS485Interface::RS485Return::Success || msg.size() < 8) {
+        debug << Debug::Mode::Err << "read cold cube ID return failed" << std::endl;
+        return id;
+      }
+      
+      if(rtype != RS485Interface::CUPS_GET_CAL_PROBE_ID_RETURN) {
+        debug << Debug::Mode::Err << "read cold cube ID return type wrong" << std::endl;
+        return id;
+      }
+      
+      id.family = msg[1];
+      for(int i = 0; i < 6; i++) id.id[i] = msg[i + 2];
+      
+    } else {
+      uint8_t *idp = reinterpret_cast<uint8_t*>(&id);
+      bool ret = i2c_read_reg(i2cfd, 0x64, 0x23, idp, sizeof(id), true);
+      
+      if(!ret) {
+        // how to indicate failure here?
+      }
     }
 
     return id;
   }
   
   bool ChillUPSInterface::readBoardConfig(){
+    if(serial != nullptr) return true;
     i2c_u8 res = i2c_read_reg_u8(i2cfd, 0x64, 0x11);
     bool ret = std::get<0>(res);
     uint8_t val = std::get<1>(res);
@@ -496,21 +741,49 @@ namespace iv4 {
   bool ChillUPSInterface::readRecordedTemps(std::vector<std::tuple<int, float> > &temps){
     bool done = false;
     while(!done) {
-      i2c_u16 ndx_res = i2c_read_reg_u16(i2cfd, 0x64, 0x0A);
-      i2c_u16 ndx_val = i2c_read_reg_u16(i2cfd, 0x64, 0x0C);
 
-      if(std::get<0>(ndx_res) && std::get<0>(ndx_val)) {
-        if(std::get<1>(ndx_res) == 0) {
+
+      if(serial != nullptr) {
+        uint8_t raddr = RS485Interface::CUPS_ADDRESS;
+        uint8_t rtype = RS485Interface::CUPS_GET_LOGGED_TEMP;
+        std::vector<uint8_t> msg {0x00};
+        RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
+        if(ret != RS485Interface::RS485Return::Success || msg.size() < 4) {
+          debug << Debug::Mode::Err << "read logged temps return failed" << std::endl;
+          return false;
+        }
+        
+        if(rtype != RS485Interface::CUPS_GET_LOGGED_TEMP_RETURN) {
+          debug << Debug::Mode::Err << "read logged temp return type wrong" << std::endl;
+          return false;
+        }
+
+        uint16_t ndx = (msg[0] << 8) | msg[1];
+        uint16_t temp = (msg[2] << 8) | msg[3];
+        if(ndx == 0 && temp == 0) {
           // all done
           break;
         }
         
-        temps.push_back(std::make_tuple(std::get<1>(ndx_res),
-                                        std::get<1>(ndx_val) * 0.01));
+        temps.push_back(std::make_tuple(ndx, temp * 0.01f));
         
       } else {
-        // What to do in the case of a i2c error here?
-        return false;
+        i2c_u16 ndx_res = i2c_read_reg_u16(i2cfd, 0x64, 0x0A);
+        i2c_u16 ndx_val = i2c_read_reg_u16(i2cfd, 0x64, 0x0C);
+        
+        if(std::get<0>(ndx_res) && std::get<0>(ndx_val)) {
+          if(std::get<1>(ndx_res) == 0) {
+            // all done
+            break;
+          }
+          
+          temps.push_back(std::make_tuple(std::get<1>(ndx_res),
+                                          std::get<1>(ndx_val) * 0.01));
+          
+        } else {
+          // What to do in the case of a i2c error here?
+          return false;
+        }
       }
     }
 
@@ -518,66 +791,92 @@ namespace iv4 {
   }
 
   bool ChillUPSInterface::updateMainStatus(SocketInterface &intf, bool send) {
-      // Read the status register
-      i2c_u8 sReg = getMainStatus();
-      if(std::get<0>(sReg)) {
-        cupsStatus mainStatus = cupsStatus(std::get<1>(sReg));
-        if(mainStatus != lastMainStatus) {
-          // Status changed, so we have to send a message.  But first we have to
-          //  check on some things
-          if(mainStatus.acStatus != lastMainStatus.acStatus) {
-            // TODO: We have to turn the leds on or off
-          }
-
-          if(mainStatus.firmwareState != lastMainStatus.firmwareState) {
-            if(!mainStatus.firmwareState) {
-              // TODO: We should send a special catastrophic failure message here
-              
-            }
-          }
-
-          if(send) {
-            //TODO: Send the status message up
-          }
-          
-          lastMainStatus = mainStatus;
+    // Read the status register
+    uint8_t mainStatus_reg;
+    bool status_ret = getMainStatus(mainStatus_reg);
+    if(status_ret) {
+      cupsStatus mainStatus = cupsStatus(mainStatus_reg);
+      if(mainStatus != lastMainStatus) {
+        // Status changed, so we have to send a message.  But first we have to
+        //  check on some things
+        if(mainStatus.acStatus != lastMainStatus.acStatus) {
+          // TODO: We have to turn the leds on or off
         }
-
-        return true;
-      } else {
-        // Failed to read...  What to do?
-        return false;
+        
+        if(mainStatus.firmwareState != lastMainStatus.firmwareState) {
+          if(!mainStatus.firmwareState) {
+            // TODO: We should send a special catastrophic failure message here
+            
+          }
+        }
+        
+        if(send) {
+          //TODO: Send the status message up
+        }
+        
+        lastMainStatus = mainStatus;
       }
+      
+      return true;
+    } else {
+      // Failed to read...  What to do?
+      return false;
+    }
   }
 
   bool ChillUPSInterface::updateSlowStatus(SocketInterface &intf, bool send) {
     bool success = true;
 
-    success |= readThermistorTemp();
-    success |= readDefrostPeriod();
-    success |= readChargePercent();
-    success |= readSupplyVoltage();
-    success |= readBatteryVoltage();
-    success |= readBackplaneVoltage();
-    success |= readOtherVoltage();
+    if(serial != nullptr) {
+      readTemperatures();
+      readVoltages();
 
+      readPersistentParams();
+    } else {
+      success |= readThermistorTemp();
+      success |= readDefrostPeriod();
+      success |= readChargePercent();
+      success |= readSupplyVoltage();
+      success |= readBatteryVoltage();
+      success |= readBackplaneVoltage();
+      success |= readOtherVoltage();
+      if(currentBoardConfig.calColdCube) {
+        success|= readCalibratedColdCubeTemp();
+      }
+      
+      if(currentBoardConfig.calAmbient) {
+        success |= readCalibratedAmbientTemp();
+      }
+      
+    }
+    
     // Just append to recorded temperatures.  Don't clear it
     success |= readRecordedTemps(savedTemps);
 
-    if(currentBoardConfig.calColdCube) {
-      success|= readCalibratedColdCubeTemp();
-    }
-
-    if(currentBoardConfig.calAmbient) {
-      success |= readCalibratedAmbientTemp();
-    }
-    
     return success;
   }
   
 
   bool ChillUPSInterface::Initialize(SocketInterface &intf) {
     open();
+
+    if(serial != nullptr) {
+      debug << "Running CUPS discovery" << std::endl;
+      bool discover_success = discover();
+      if(!discover_success) {
+        debug << Debug::Mode::Err << "Failed to discover chillups" << std::endl;
+        return false;
+      }
+    }
+    
+    if(serial != nullptr && !lastMainStatus.bootACK) {
+      // acknowledge CUPS boot
+      acknowledgeBoot();
+
+      if(!lastMainStatus.bootACK) {
+        debug << Debug::Mode::Info << "Boot ACK failed" << std::endl;
+      }
+    }
     
     // First we get the main status, but don't send anything yet
     if(!updateMainStatus(intf, false)) {
@@ -594,15 +893,16 @@ namespace iv4 {
     }
 
     if(lastMainStatus.comprError) {
-      i2c_u8 comprError = readCompressorError();
-      if(std::get<0>(comprError)) {
+      uint8_t comprError;
+      bool success = readCompressorError(comprError);
+      if(success) {
         Message msg(Message::CUPS, Message::CUPS.CompressorError,
-                     std::get<1>(comprError), 0, 0, 0);
+                     (comprError), 0, 0, 0);
         debug << "Sending compressor error as an event " << std::endl;
         intf.Send(msg);
       } else {
         // Catastrophic system failure
-        // TODO: Need a "I2C" failed event
+        // TODO: Need a communication failed event
       }
     }
 
@@ -625,6 +925,8 @@ namespace iv4 {
       //  Currently this is handled when the client requests status.  All the saved temps will be sent then
       //  There is no message for temps available
       //  Current plan is to leave it that way
+
+      debug << Debug::Mode::Info << "We have " << savedTemps.size() << " stored temps to send" << std::endl;
     }
 
     readSetPoint();
@@ -679,9 +981,15 @@ namespace iv4 {
         }
 
         // TODO: No limit to range in the docs - determine what a good limit is
-        setSetPoint(temp * 0.01);
-        setTempRange(range * 0.01);
-
+        if(serial != nullptr) {
+          setTemperature(temp, range);
+          usleep(2500);
+          readPersistentParams();
+        } else {          
+          setSetPoint(temp * 0.01);
+          setTempRange(range * 0.01);
+        }
+        
         debug << "Set temp to " << temp << " +- " << range << std::endl;
       }
       break;
@@ -759,10 +1067,15 @@ namespace iv4 {
         }
 
         bool success = true;
-        success |= setDefrostPeriod(newDefrostPeriod);
-        success |= setDefrostLength(newDefrostLength);
-        success |= setDefrostTempLimit(newDefrostLimit);
-
+        if(serial != nullptr) {
+          success = setDefrostParams(newDefrostPeriod, newDefrostLength, newDefrostLimit*100);
+          usleep(2500);
+          readPersistentParams();
+        } else {
+          success |= setDefrostPeriod(newDefrostPeriod);
+          success |= setDefrostLength(newDefrostLength);
+          success |= setDefrostTempLimit(newDefrostLimit);
+        }
 
         if(!success) {
           close();
@@ -938,7 +1251,98 @@ namespace iv4 {
     close();
     return Message::MakeACK(m);
   }
+
+  bool ChillUPSInterface::acknowledgeBoot() {
+    std::vector<uint8_t> msg {0x00};
+    uint8_t raddr = RS485Interface::CUPS_ADDRESS;
+    uint8_t rtype = RS485Interface::CUPS_INITIATE_OPERATION;
+    RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
+    if(ret != RS485Interface::RS485Return::Success) {
+      debug << "Boot ack failed for address " << raddr << std::endl;
+      usleep(1000);
+      return false;
+    }
+    
+    // Make sure the message is the correct size
+    if(msg.size() < 1) {
+      debug << "Message size wrong for book ack: " << msg.size() << std::endl;
+      return false;
+    }
+    
+    // Make sure this is a discovery response
+    if(rtype != RS485Interface::CUPS_GET_STATUS_RETURN) {
+      debug << Debug::Mode::Info << "boot ack return is not correct message type: " <<
+        std::hex << (int)rtype << std::dec << std::endl;
+      return false;
+    }
+
+    lastMainStatus = cupsStatus(msg[0]);
+
+    return true;
+  }
   
+  // This will populate the dsbs variable
+  bool ChillUPSInterface::discover() {
+    
+    std::vector<uint8_t> msg {0x00};
+    uint8_t raddr = RS485Interface::CUPS_ADDRESS;
+    uint8_t rtype = RS485Interface::DISCOVERY;    
+    RS485Interface::RS485Return ret = serial->SendAndReceive(raddr, rtype, true, msg, DEFAULT_TIMEOUT);
+    if(ret != RS485Interface::RS485Return::Success) {
+      debug << "Discovery failed for address " << raddr << std::endl;
+      usleep(1000);
+      return false;
+    }
+    
+    // Sanity check the address
+    if(raddr != 15) {
+      debug << "discovery read address wrong: " << (int)raddr << "::" << 15 << std::endl;
+      return false;
+    }
+    
+    // Make sure the message is the correct size
+    if(msg.size() != 8) {
+      debug << "Message size wrong for discovery: " << msg.size() << std::endl;
+      return false;
+    }
+    
+    // Make sure this is a discovery response
+    if(rtype != RS485Interface::DISCOVERY_RETURN) {
+      debug << Debug::Mode::Info << "Discovery return is not correct message type: " <<
+        std::hex << (int)rtype << std::dec << std::endl;
+      return false;
+    }
+    
+    // Check the address against the device type
+    uint8_t dtype = msg[0] & 0x0F;
+    if(dtype == 7) {
+      if(raddr != 15) { // CUPS sends response to me
+        debug << Debug::Mode::Err << "CUPS at wrong address: " << (int)raddr << std::endl;
+        return false;
+      }
+    } else {
+      debug << Debug::Mode::Err << "Unknown device type: " << (int)dtype << std::endl;
+      return false;
+    }
+
+    // Now to get versions and _stuff_
+    currentVersion.major = (msg[7]>>4) & 0x0F;
+    currentVersion.minor = msg[7] & 0x0f;
+    
+    bool calColdPresent = ((msg[1] & 0x20) != 0);
+    bool calAmbiPresent = ((msg[1] & 0x10) != 0);
+
+    debug << Debug::Mode::Info <<
+      "CUPS discovered -" <<
+      " id: " << std::hex << (int)(msg[1] & 0x0F) << std::dec << 
+      " ver: " << currentVersion.major << "." << currentVersion.minor << 
+      " Calibrated Cold:    " << (calColdPresent?"*":" ") <<
+      " Calibrated Ambient: " << (calAmbiPresent?"*":" ") <<
+      std::endl;
+    return true;
+  }
+
+
   bool ChillUPSInterface::ProcessMainLoop(SocketInterface &intf) {
     time_t tnow = time(nullptr);
 

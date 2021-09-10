@@ -65,7 +65,9 @@ int main(int argc, char ** argv) {
   bool use_cups = true;
   bool use_dsb  = true;
   bool init_on_start = false;
-  unsigned int update_freq = 1;
+  bool pwm_leds = true;
+
+  unsigned int update_freq = 10;
   bool usbrs485 = false;
   for(int i = 1; i < argc; i++) {
     if(std::string(argv[i]) == "-s") simulate = true;
@@ -85,6 +87,8 @@ int main(int argc, char ** argv) {
     else if(std::string(argv[i]) == "--cups=0") use_cups = false;
     else if(std::string(argv[i]) == "--dsb=0") use_dsb = false;
     else if(std::string(argv[i]) == "--urs485") usbrs485 = true;
+
+    else if(std::string(argv[i]) == "--pwm-leds=0") pwm_leds = false;
   }
 
   debug << Debug::Mode::Debug << "Debug statements visible" << std::endl;
@@ -97,7 +101,18 @@ int main(int argc, char ** argv) {
   RunCommand("echo 420 > /sys/class/gpio/export");
   RunCommand("echo out > /sys/class/gpio/gpio420/direction");
   RunCommand("echo 0 > /sys/class/gpio/gpio420/value");
-  
+
+  if(pwm_leds) {
+    RunCommand("echo 0 > /sys/class/pwm/pwmchip0/export");
+    RunCommand("echo 46000 > /sys/class/pwm/pwmchip0/pwm0/period");
+    
+    SetLED(0x00, pwm_leds);
+
+    // Set the analog control all the way up so that pwm is all that controls the LEDs
+    SetPot("/dev/i2c-0", 0x2C, 0xFF);
+
+    RunCommand("echo 1 > /sys/class/pwm/pwmchip0/pwm0/enable");
+  }
   
   bool initialized = false;
 
@@ -141,7 +156,8 @@ int main(int argc, char ** argv) {
   ChillUPSInterface *cups = nullptr;
   if(use_cups) {
     debug << "Initializing CUPS" << std::endl;
-    cups = new ChillUPSInterface("/dev/i2c-2");
+    //cups = new ChillUPSInterface(rs485, "/dev/i2c-2");
+    cups = new ChillUPSInterface(rs485, "/dev/i2c-22");
   }
 
   
@@ -167,12 +183,12 @@ int main(int argc, char ** argv) {
   
   // Create our listening socket
   SocketInterface server([&server, &cameras, &initialized,
-                          cups, dsb,
+                          cups, dsb, pwm_leds,
                           &cam0on, &cam1on,
                           &image0on, &edge0on,
                           &image1on, &edge1on,
                           &eventServer](const Message &message) {
-      //TODO: Refactor some of this into functions
+    //TODO: Refactor some of this into functions
     debug << "Message received: " << message.header.toString() << std::endl;
     
     std::vector<std::unique_ptr<Message>> resp;
@@ -350,16 +366,10 @@ int main(int argc, char ** argv) {
           //TODO: Roll this into its own class/handler
           if(message.header.subType == Message::Hardware.SetLights) {
             uint8_t lightsVal = (int)message.header.imm[0];
-            if(lightsVal < 0x60) lightsVal = 0;
-            if(lightsVal > 0xE0) lightsVal = 0xE0;
-            debug << "Setting pot to " << std::hex << lightsVal <<
-              std::dec << std::endl;
-            SetPot("/dev/i2c-0", 0x2C, lightsVal);
+            SetLED(lightsVal, pwm_leds);
             resp.push_back(Message::MakeACK(message));
           } else if(message.header.subType == Message::Hardware.GetLights) {
-            uint8_t val = GetPot("/dev/i2c-0", 0x2C);
-            debug << "Got pot value of " << std::hex << (int)val <<
-              std::dec << std::endl;
+            uint8_t val = GetLED(pwm_leds);
             resp.push_back(unique_ptr<Message>(new Message(Message::Hardware, Message::Hardware.GetLights,
                                                            val, 0, 0, 0)));
           } else if(message.header.subType == Message::Hardware.SetBuzzer) {
