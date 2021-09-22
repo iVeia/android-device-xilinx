@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <ctime>
+#include <chrono>
 
 #include "message.hh"
 #include "hardware.hh"
@@ -24,13 +25,18 @@ namespace iv4 {
     bool ProcessMainLoop(SocketInterface &intf, bool initialized, bool send = true);
 
     uint32_t GetVersions() const;
+    uint8_t GetVersionFifth() const;
     uint32_t Count() const;
 
     bool ReceiveDrawerEvent(std::vector<uint8_t> &msg);
     bool SelfAssignEvent();
 
+    bool StormInProgress() {return storm;}
+
   protected:
     RS485Interface *serial;
+
+    bool storm;
     
     // Class to store information on a single drawer sensor board
     struct DSB {
@@ -61,6 +67,8 @@ namespace iv4 {
     bool discover();
     bool drawerOverride(uint8_t index, bool lock);
 
+    bool calibrating;
+    std::chrono::time_point<std::chrono::steady_clock> recalStartTime;
     bool drawerRecalibration(bool save);
 
     bool setBootLoaderMode(bool enable);

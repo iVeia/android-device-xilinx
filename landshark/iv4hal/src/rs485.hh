@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <chrono>
 
 #include "dsb.hh"
 #include "chillups.hh"
@@ -32,7 +33,7 @@ namespace iv4 {
     static const uint8_t DSB_ASSIGN_INDEX             = 0x22;
     static const uint8_t DSB_GET_DEBUG                = 0x51;
     static const uint8_t DSB_GET_DEBUG_RETURN         = 0xD1;
-                                                      
+
     static const uint8_t CUPS_GET_STATUS              = 0x60;
     static const uint8_t CUPS_GET_PSETTINGS           = 0x61;
     static const uint8_t CUPS_GET_DSETTINGS           = 0x62;
@@ -41,7 +42,8 @@ namespace iv4 {
     static const uint8_t CUPS_GET_CAL_PROBE_ID        = 0x65;
     static const uint8_t CUPS_GET_LOGGED_TEMP         = 0x66;
     static const uint8_t CUPS_GET_COMPR_ERROR         = 0x67;
-
+    static const uint8_t CUPS_RESET                   = 0x6C;
+    
     static const uint8_t CUPS_GET_STATUS_RETURN       = 0xE0;
     static const uint8_t CUPS_GET_PSETTINGS_RETURN    = 0xE1;
     static const uint8_t CUPS_GET_DSETTINGS_RETURN    = 0xE2;
@@ -99,14 +101,13 @@ namespace iv4 {
 
     void DumpSerialPortStats();
 
-    
   protected:
     bool open();
     bool close();
     
     RS485Return ReceiveSingleMessage(uint8_t &addr, uint8_t &type, std::vector<uint8_t> &msg,
                                      int timeoutMS);
-    
+
     std::string devFile;
     int fd;
 

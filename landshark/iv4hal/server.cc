@@ -156,8 +156,7 @@ int main(int argc, char ** argv) {
   ChillUPSInterface *cups = nullptr;
   if(use_cups) {
     debug << "Initializing CUPS" << std::endl;
-    //cups = new ChillUPSInterface(rs485, "/dev/i2c-2");
-    cups = new ChillUPSInterface(rs485, "/dev/i2c-22");
+    cups = new ChillUPSInterface(rs485);
   }
 
   
@@ -196,53 +195,60 @@ int main(int argc, char ** argv) {
     // We handle management messages here ourselves
     if(message.header.type == Message::Management &&
        message.header.subType == Message::Management.Initialize) {
-      // Initialize has been called
-      if(!initialized) {
-        //debug << "Initializing " << cameras.size() << " cameras" << std::endl;
-        //for(CameraInterface &cam : cameras) {
-        //  cam.InitializeV4L2();
-        //  debug << "Initialized camera " << (void*)&cam << std::endl;
-        //}
-        
-
-        if(cups != nullptr) {
-          cups->Initialize(eventServer);
-          debug << "Initialized ChillUPS" << std::endl;
-        } else debug << "Skipping cups init" << std::endl;
-
-        if(dsb != nullptr) {
-          dsb->Initialize(eventServer);
-          debug << "Initialized DSBs" << std::endl;
-        } else debug << "Skipping dsb init" << std::endl;
+      if(dsb != nullptr && dsb->StormInProgress()) {
+        resp.push_back(Message::MakeNACK(message, 0, "Self-Assignment in progress"));
+        debug << "Assignment in progress" << std::endl;
       } else {
-        // We are trying to initialize when we already are.  No harm there?        
+        // Initialize has been called
+        if(!initialized) {
+          //debug << "Initializing " << cameras.size() << " cameras" << std::endl;
+          //for(CameraInterface &cam : cameras) {
+          //  cam.InitializeV4L2();
+          //  debug << "Initialized camera " << (void*)&cam << std::endl;
+          //}
+          
+          
+          if(cups != nullptr) {
+            cups->Initialize(eventServer);
+            debug << "Initialized ChillUPS" << std::endl;
+          } else debug << "Skipping cups init" << std::endl;
+          
+          if(dsb != nullptr) {
+            dsb->Initialize(eventServer);
+            debug << "Initialized DSBs" << std::endl;
+          } else debug << "Skipping dsb init" << std::endl;
+        } else {
+          // We are trying to initialize when we already are.  No harm there?        
+        }
+        
+        // Send back our state and revision here
+        int crev = 0;
+        if(cups != nullptr) {
+          crev =
+            ((cups->Major() << 4) & 0x000000F0) |
+            ((cups->Minor() << 0) & 0x0000000F);
+        }
+        
+        uint32_t rev =
+          ((IV4HAL_MAJOR << 16) & 0x00FF0000) |
+          ((IV4HAL_MINOR <<  8) & 0x0000FF00) |
+          ((IV4HAL_PATCH <<  0) & 0x000000FF);
+        
+        uint32_t drev = 0;
+        if(dsb != nullptr) {
+          uint32_t dcount = dsb->Count();
+          debug << "Found " << dcount << " dsbs" << std::endl;
+          drev = dsb->GetVersions();
+          uint8_t d5 = dsb->GetVersionFifth();
+          crev = crev | (d5 << 24);
+        }
+        
+        resp.push_back(std::unique_ptr<Message>(new Message(Message::Management, Message::Management.Initialize,
+                                                            0, drev, crev, rev)));
+        
+        // Keep track of the fact that we have been initialized
+        initialized = true;
       }
-
-      // Send back our state and revision here
-      int crev = 0;
-      if(cups != nullptr) {
-        crev =
-          ((cups->Major() << 4) & 0x000000F0) |
-          ((cups->Minor() << 0) & 0x0000000F);
-      }
-      
-      uint32_t rev =
-        ((IV4HAL_MAJOR << 16) & 0x00FF0000) |
-        ((IV4HAL_MINOR <<  8) & 0x0000FF00) |
-        ((IV4HAL_PATCH <<  0) & 0x000000FF);
-
-      uint32_t drev = 0;
-      if(dsb != nullptr) {
-        uint32_t dcount = dsb->Count();
-        debug << "Found " << dcount << " dsbs" << std::endl;
-        drev = dsb->GetVersions();
-      }
-
-      resp.push_back(std::unique_ptr<Message>(new Message(Message::Management, Message::Management.Initialize,
-                                                          0, drev, crev, rev)));
-
-      // Keep track of the fact that we have been initialized
-      initialized = true;
     } else if(!initialized) {
       // If we haven't been initialized yet, we can't continue
       resp.push_back(Message::MakeNACK(message, 0, "Not yet initialized"));
@@ -342,10 +348,14 @@ int main(int argc, char ** argv) {
       case Message::CUPS:
         {
           debug << "Processing ChillUPS message" << std::endl;
-          if(cups != nullptr) {
-            resp.push_back(cups->ProcessMessage(message));
+          if(dsb != nullptr && dsb->StormInProgress()) {
+            resp.push_back(Message::MakeNACK(message, 0, "Self-Assignment in progress"));            
           } else {
-            resp.push_back(Message::MakeNACK(message, 0, "iv4hal is running without ChillUPS support"));
+            if(cups != nullptr) {
+              resp.push_back(cups->ProcessMessage(message));
+            } else {
+              resp.push_back(Message::MakeNACK(message, 0, "iv4hal is running without ChillUPS support"));
+            }
           }
         }
         break;
@@ -353,10 +363,16 @@ int main(int argc, char ** argv) {
       case Message::DSB:
         {
           debug << "Processing DSB message" << std::endl;
-          if(dsb != nullptr) {
-            resp.push_back(dsb->ProcessMessage(message));
+          // Reset is a special message in that it resets both CUPS and DSBs
+
+          if(dsb != nullptr && dsb->StormInProgress()) {
+            resp.push_back(Message::MakeNACK(message, 0, "Self-Assignment in progress"));            
           } else {
-            resp.push_back(Message::MakeNACK(message, 0, "iv4hal is running without DSB support"));
+            if(dsb != nullptr) {
+              resp.push_back(dsb->ProcessMessage(message));
+            } else {
+              resp.push_back(Message::MakeNACK(message, 0, "iv4hal is running without DSB support"));
+            }
           }
         }
         break;

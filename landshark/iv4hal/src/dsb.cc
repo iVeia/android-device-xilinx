@@ -18,6 +18,8 @@ DSBInterface::DSBInterface(RS485Interface *serial, unsigned int update_rate_s) {
   sendEnumEvent = false;
   this->serial = serial;
 
+  calibrating = false;
+  storm = false;
   if(update_rate_s > 0 && update_rate_s < (60 * 5)) {
     dsbUpdateFreq = update_rate_s;
   } else {
@@ -43,6 +45,19 @@ bool DSBInterface::int_send(uint8_t addr, uint8_t type, bool reading,
 std::unique_ptr<Message> DSBInterface::ProcessMessage(const Message &msg) {
   if(msg.header.type != Message::DSB)
     return Message::MakeNACK(msg, 0, "Invalid message pacssed to DSBInterface");
+
+  // Check to make sure we are not waiting for calibration
+  if(calibrating) {
+    auto timeNow = std::chrono::steady_clock::now();
+    if(std::chrono::duration_cast<std::chrono::milliseconds>(timeNow - recalStartTime).count() > 1200) {
+      // done calibrating
+      debug << Debug::Mode::Info << "Calibration complete" << std::endl;
+      calibrating = false;
+    } else {
+      debug << Debug::Mode::Info << "Calibration in progress - return NACK" << std::endl;
+      return Message::MakeNACK(msg, 0, "Calibration in progress");
+    }
+  }
 
   bool success = false;
   switch(msg.header.subType) {
@@ -109,6 +124,7 @@ std::unique_ptr<Message> DSBInterface::ProcessMessage(const Message &msg) {
   case Message::DSB.DrawerRecalibration:
     {
       bool save = (msg.header.imm[0] == 1);
+      
       debug << "Drawer recalibration message: " << save << std::endl;
       success = drawerRecalibration(save);
     }
@@ -189,12 +205,17 @@ uint32_t DSBInterface::Count() const {
   return dsbs.size();
 }
 
+uint8_t DSBInterface::GetVersionFifth() const {
+  if(dsbs.size() >= 5) return dsbs[4].version;
+  else return 0xFF;
+}
+
 uint32_t DSBInterface::GetVersions() const {
   uint32_t vers = 0xFFFFFFFF;
 
   for(const DSB &dsb : dsbs) {
     vers = ((vers << 8) & 0xFFFFFF00) | (dsb.version & 0x000000FF);
-    debug << std::hex << "DSB: 0x" << vers << " :: ";
+    debug << std::hex << "DSB: 0x" << (int)vers << " :: ";
   }
   debug << std::dec << std::endl;
 
@@ -328,6 +349,9 @@ bool DSBInterface::drawerRecalibration(bool save) {
     debug << "Failed to send drawer recalibration " << save << " message" << std::endl;
     return false;
   }
+
+  calibrating = true;
+  recalStartTime = std::chrono::steady_clock::now();
 
   debug << "Sent recalibration message" << std::endl;
 
@@ -696,6 +720,7 @@ bool DSBInterface::ReceiveDrawerEvent(std::vector<uint8_t> &msg) {
 }
 
 bool DSBInterface::SelfAssignEvent() {
+  storm = true;
   discoverCountdown = time(nullptr) + RESET_DISCOVER_WAIT;
   return true;
 }
@@ -709,6 +734,7 @@ bool DSBInterface::ProcessMainLoop(SocketInterface &intf, bool initialized, bool
       // We have passed the threshold to perform a discovery
       discover();
       discoverCountdown = 0;
+      storm = false;
       // Then we fall through to do an update
       tLastUpdate = 0;
     } else {

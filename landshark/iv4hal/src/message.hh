@@ -121,6 +121,11 @@ namespace iv4 {
     static struct _CUPSMessage {
       //! HAL cups message type
       constexpr operator uint8_t() const {return  0x03;}
+
+      //! Reset CUPS
+      /*! No Parameters */
+      constexpr static uint8_t Reset                = 0x02;
+      constexpr static uint8_t Refresh              = 0x04;
       //! Set temperature set point
       /*!
         imm[0] : Temperature
@@ -152,7 +157,7 @@ namespace iv4 {
         imm[1] : defrost length
         imm[2] : defrost limit
       */
-      constexpr static uint8_t SetDefrostParams     = 0x20;
+      constexpr static uint8_t SetDefrostSettings   = 0x20;
       //! Get defrost settings
       /*! No parameters on send
 
@@ -161,11 +166,11 @@ namespace iv4 {
         imm[1] : defrost length
         imm[2] : defrost limit
       */
-      constexpr static uint8_t GetDefrostParams    = 0x21;
+      constexpr static uint8_t GetDefrostSettings  = 0x21;
       //! Initiate defrost
       constexpr static uint8_t InitiateDefrost     = 0x22;
       //! Initiate battery test
-      constexpr static uint8_t IntiiateBatteryTest = 0x32;
+      constexpr static uint8_t InitiateBatteryTest = 0x32;
       //! Get all system voltages
       /*!
         No parameters on send
@@ -206,9 +211,15 @@ namespace iv4 {
       /*!
         imm[0] : Bitfield of errors
       */       
-      constexpr static uint8_t CompressorError       = 0xB0;
+      constexpr static uint8_t GetStatus           = 0x60;
+      constexpr static uint8_t GetDynamicSettings  = 0x62;
+      constexpr static uint8_t SetFans             = 0x68;
+      constexpr static uint8_t SetAuto             = 0x69;
+      constexpr static uint8_t SetLEDBackup        = 0x6A;
+      constexpr static uint8_t LogEnable           = 0x6B;
 
-      //TODO: These
+      constexpr static uint8_t CompressorError     = 0xB0;
+
       constexpr static uint8_t Failure               = 0xB2; 
       constexpr static uint8_t BatteryStateChanged   = 0xB4; 
       constexpr static uint8_t ACStateChanged        = 0xB5;
@@ -216,17 +227,25 @@ namespace iv4 {
       
       std::string toString(uint8_t sub) {
         switch(sub) {
+        case Reset                : return "CUPS::Reset";
+        case Refresh              : return "CUPS::Refresh";
         case SetTemperature       : return "CUPS::SetTemperature";
         case GetTemperature       : return "CUPS::GetTemperature";
         case GetAllTemperatures   : return "CUPS::GetAllTemperatures";
-        case SetDefrostParams     : return "CUPS::SetDefrostParams";
-        case GetDefrostParams     : return "CUPS::GetDefrostParams";
+        case SetDefrostSettings   : return "CUPS::SetDefrostSettings";
+        case GetDefrostSettings   : return "CUPS::GetDefrostSettings";
         case InitiateDefrost      : return "CUPS::InitiateDefrost";
-        case IntiiateBatteryTest  : return "CUPS::IntiiateBatteryTest";
+        case InitiateBatteryTest  : return "CUPS::InitiateBatteryTest";
         case GetAllVoltages       : return "CUPS::GetAllVoltages";
         case GetBatteryPercent    : return "CUPS::GetBatteryPercent";
         case GetStoredTemperatures: return "CUPS::GetStoredTemperatures";
         case GetProbeIDs          : return "CUPS::GetProbeIDs";
+        case GetStatus            : return "CUPS::GetStatus";         
+        case GetDynamicSettings   : return "CUPS::GetDynamicSettings";
+        case SetFans              : return "CUPS::SetFans";           
+        case SetAuto              : return "CUPS::SetAuto";           
+        case SetLEDBackup         : return "CUPS::SetLEDBackup";      
+        case LogEnable            : return "CUPS::LogEnable";
         case CompressorError      : return "CUPS::CompressorError";
         case Failure              : return "CUPS::Failure"; 
         case BatteryStateChanged  : return "CUPS::BatteryStateChanged"; 

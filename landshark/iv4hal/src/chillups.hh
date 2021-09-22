@@ -10,17 +10,12 @@
 #include "message.hh"
 
 namespace iv4 {
-  typedef std::tuple<bool, uint16_t> i2c_u16;
-  typedef std::tuple<bool, int16_t>  i2c_i16;
-  typedef std::tuple<bool, uint8_t>  i2c_u8;
-  typedef std::tuple<bool, float>    i2c_f;
-  typedef std::tuple<bool, bool>     i2c_b;
 
   class RS485Interface;
   
   class ChillUPSInterface {
   public:
-    ChillUPSInterface(RS485Interface *serial, const std::string &dev);
+    ChillUPSInterface(RS485Interface *serial);
     ~ChillUPSInterface();
 
     std::unique_ptr<Message> ProcessMessage(const Message &msg);
@@ -44,15 +39,6 @@ namespace iv4 {
     bool updateMainStatus(SocketInterface &intf, bool send = true);
     bool updateSlowStatus(SocketInterface &intf, bool send = true);
     
-    // Keep track of whether the i2c device node is opened or not
-    //  we don't want to keep it open all the time becuase it may
-    //  cause issues talking to the camera
-    std::string _dev;
-    int i2cfd;
-    bool opened() const;
-    bool open();
-    bool close();
-
     // RS485 serial interface
     RS485Interface *serial;
 
@@ -65,19 +51,19 @@ namespace iv4 {
     time_t lastBSMessage;  // The last time we sent a Battery state message
     time_t lastACMessage;  // The last time we sent an AC message
     time_t lastCEMessge;   // The last time we sent a compressor error message
-
     
-    // Read from the main status register (i2c:0x60)
+    // Read from the main status register
     class cupsStatus {
     public:
       // TODO: Clean this up by making everything a function processing _reg?
+      //       or maybe a bitfield enum?
       bool acStatus;         // Bit 0
+      bool battGood;
       bool battQual;
-      bool battLow;
       bool bootACK;    // Boot status for RS485
       
-      bool tempOutRange;      
-      bool comprError;
+      bool comprON;      
+      bool comprOK;
       bool defrostState;
       bool firmwareState;    // Bit 7
 
@@ -96,12 +82,12 @@ namespace iv4 {
       void set(uint8_t reg) {
         firmwareState = (reg & 0x80) != 0;
         defrostState = (reg & 0x40) != 0;
-        comprError = (reg & 0x20) != 0;
-        tempOutRange = (reg & 0x10) != 0;
+        comprOK = (reg & 0x20) != 0;
+        comprON = (reg & 0x10) != 0;
 
         bootACK = (reg & 0x08) != 0;
-        battLow = (reg & 0x04) != 0;
-        battQual = (reg & 0x02) != 0;
+        battQual = (reg & 0x04) != 0;
+        battGood = (reg & 0x02) != 0;
         acStatus = (reg & 0x01) != 0;
 
         _reg = reg;
@@ -122,91 +108,51 @@ namespace iv4 {
     };
     cupsStatus lastMainStatus;
     bool lastMainStatusRead;
-    bool auto_chill = true;
-    bool getMainStatus(uint8_t &status_reg);
+    bool getMainStatus(uint8_t &status_reg, bool &);
 
-    bool readTemperatures();
-    bool readVoltages();
-    bool discover();
-    bool acknowledgeBoot();
-
-    // Read from the individual status registers (i2c:0x64)
-    //                             // REgister number
-    // TODO: This could all use some cleanup.  I should be using constants for register addresses
+    float lastCalibratedColdCubeTemp;
+    float lastCalibratedAmbientTemp;
     float lastThermistorTemp;
-    bool   readThermistorTemp();   // 0x00
+    bool readTemperatures();
 
-    uint16_t lastDefrostPeriod;
-    bool     readDefrostPeriod();    // 0x02
-    bool     setDefrostPeriod(uint16_t);
-    bool     setDefrostParams(uint16_t period, uint8_t length, uint16_t limit);
-
-    bool readPersistentParams();
-    
     uint8_t lastChargePercent;
-    bool    readChargePercent();    // 0x04
-
-    float lastSupplyVoltage;
-    float lastSupply2Voltage;
-    float lastSupply3Voltage;
-    bool  readSupplyVoltage();    // 0x05
-
+    float lastPSU1Voltage;
+    float lastPSU2Voltage;
+    float lastPSU3Voltage;
     float lastBatteryVoltage;
-    bool  readBatteryVoltage();   // 0x06
+    float lastChargerVoltage;
+    float lastCompressorVoltage;
+    bool readVoltages();
 
-    float lastBackplaneVoltage;
-    bool  readBackplaneVoltage(); // 0x07
 
-    float lastOtherVoltage;
-    bool  readOtherVoltage();     // 0x08 TODO: Do I need to care which this is?
-
+    bool readCompressorError(uint8_t &err);  // 0x10
+    
+    uint8_t lastDefrostLength;
+    float lastDefrostTempLimit;
     float lastTempRange;
-    bool  readTempRange();        // 0x09
-    bool  setTempRange(float);
-    bool  setTemperature(uint16_t temp, uint8_t range);
-
     float lastSetPoint;
-    bool  readSetPoint();         // 0x0E
-    bool  setSetPoint(float);
+    uint16_t lastDefrostPeriod;
+    bool readPersistentSettings();
+    bool setTemperature(uint16_t temp, uint8_t range);
+    bool setDefrostSettings(uint16_t period, uint8_t length, uint16_t limit);
+
+    bool discover();
+    bool acknowledgeBoot(uint8_t &status_byte, bool &);
 
     uint8_t lastCompressorError;
-    bool  readCompressorError(uint8_t &err);  // 0x10
 
     struct chillups_version {
       uint8_t major;
       uint8_t minor;
     };
     chillups_version currentVersion;
-    bool readVersion();      // 0x11
-
-    uint8_t lastDefrostLength;
-    bool    readDefrostLength();          // 0x12
-    bool    setDefrostLength(uint8_t);
-
-    bool lastCompressorBackupState;
-    bool readCompressorBackupState();  // 0x13
-    bool setCompressorBackupState(bool state);
-
-    bool lastTempLoggingState;
-    bool readTempLoggingState();       // 0x14
-    bool setTempLoggingState(bool state);
-
-    float lastDefrostTempLimit;
-    bool  readDefrostTempLimit();       // 0x16
-    bool  setDefrostTempLimit(float);
-
-    float lastCalibratedColdCubeTemp;
-    bool  readCalibratedColdCubeTemp(); // 0x18
-
-    float lastCalibratedAmbientTemp;
-    bool  readCalibratedAmbientTemp();  // 0x21
-
+    
     struct chillups_id {
       uint8_t family;
       uint8_t id[6];
     };
-    chillups_id readColdCubeID();  // 0x1A
-    chillups_id readAmbientID();   // 0x23
+    chillups_id readColdCubeID();
+    chillups_id readAmbientID();
     std::string IdToString(chillups_id);
 
     struct board_config {
@@ -216,13 +162,62 @@ namespace iv4 {
       bool calAmbient; // Calibrated ambient probe exists
     };
     board_config currentBoardConfig;
-    bool         readBoardConfig();  // 0x2A
+    bool         readBoardConfig();
     
-    // 0x0A - holds the temp index number
-    // 0x0C - holds the temp value
     std::vector<std::tuple<int, float> > savedTemps;
     bool readRecordedTemps(std::vector<std::tuple<int, float> > &temps);
-  
+
+    class cupsDynamicSettings {
+    public:
+      bool large_fan;
+      bool small_fan;
+      bool ambient_fan;
+      bool auto_chill;
+      bool auto_defrost;
+      bool led_backup;
+      bool log_enable;
+
+      cupsDynamicSettings(uint8_t b = 0x00) {
+        parseByte(b);
+      }
+      
+      void parseByte(uint8_t b) {
+        large_fan    = (b&0x80) != 0;
+        small_fan    = (b&0x40) != 0;
+        ambient_fan  = (b&0x20) != 0;
+        auto_chill   = (b&0x08) != 0;
+        auto_defrost = (b&0x04) != 0;
+        led_backup   = (b&0x02) != 0;
+        log_enable   = (b&0x01) != 0;
+      }
+
+      uint8_t toByte() {
+        uint8_t ret = 0x0;
+        if(large_fan)    ret |= 0x80;
+        if(small_fan)    ret |= 0x40;
+        if(ambient_fan)  ret |= 0x20;
+        if(auto_chill)   ret |= 0x08;
+        if(auto_defrost) ret |= 0x04;
+        if(led_backup)   ret |= 0x02;
+        if(log_enable)   ret |= 0x01;
+
+        return ret;
+      }
+    };
+    cupsDynamicSettings currentDynamicSettings;
+    bool readDynamicSettings();
+    bool setDynamicSettings();
+
+    bool startDefrost();
+    bool startBatteryTest();
+
+    bool cupsResetting;
+    time_t cupsResettingTime;
+    bool globalReset();
+
+    bool getErrorCode(uint8_t &error_code);
+    bool getCUPSErrorCodes(std::vector<uint8_t> &);
+
   private:
 
   public:
